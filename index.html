@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f3f1ec" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#171b1d" media="(prefers-color-scheme: dark)">
+  <meta name="description" content="大人の初心者が、4音ずつ五線譜を読んでバイオリンで確かめる練習アプリ">
+  <title>ふよみ</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <main class="app-shell">
+    <section id="setup-screen" class="screen" aria-labelledby="setup-title">
+      <header class="brand-header">
+        <p class="eyebrow">バイオリンの譜読み</p>
+        <h1 id="setup-title">ふよみ</h1>
+        <p class="lead">五線譜の4音を、左から一音ずつ確かめます。</p>
+      </header>
+
+      <p id="teacher-notice" class="notice" hidden>先生の指定で始めます</p>
+
+      <form id="settings-form" class="settings-card">
+        <div class="field-grid">
+          <label class="field" for="level-select">
+            <span>レベル</span>
+            <select id="level-select" name="level"></select>
+          </label>
+
+          <label class="field" for="key-select">
+            <span>調</span>
+            <select id="key-select" name="key">
+              <option value="C">ハ長調（C）</option>
+              <option value="G">ト長調（G）</option>
+              <option value="D">ニ長調（D）</option>
+              <option value="A">イ長調（A）</option>
+            </select>
+          </label>
+
+          <label class="field" for="count-select">
+            <span>フレーズ数</span>
+            <select id="count-select" name="count">
+              <option value="3">3フレーズ</option>
+              <option value="5">5フレーズ</option>
+              <option value="10">10フレーズ</option>
+            </select>
+          </label>
+
+          <label class="field" for="hint-select">
+            <span>ヒント</span>
+            <select id="hint-select" name="hint">
+              <option value="off">なし</option>
+              <option value="on">最初から出す</option>
+            </select>
+          </label>
+
+          <label class="field field-wide" for="sound-select">
+            <span>おてほんの音</span>
+            <select id="sound-select" name="sound">
+              <option value="on">オン</option>
+              <option value="off">オフ</option>
+            </select>
+          </label>
+        </div>
+
+        <p id="level-description" class="field-note"></p>
+
+        <details class="advanced-settings">
+          <summary>詳細設定</summary>
+          <div class="field-grid advanced-grid">
+            <label class="field" for="tolerance-select">
+              <span>判定のゆるさ</span>
+              <select id="tolerance-select" name="tolerance"></select>
+            </label>
+
+            <label class="field" for="a4-select">
+              <span>A4の基準</span>
+              <select id="a4-select" name="a4">
+                <option value="440">440 Hz</option>
+                <option value="442">442 Hz</option>
+                <option value="443">443 Hz</option>
+              </select>
+            </label>
+          </div>
+        </details>
+
+        <button class="primary-button full-button" type="submit">はじめる</button>
+      </form>
+
+      <p class="privacy-note">マイクの音は端末の中だけで処理し、保存・送信しません。</p>
+    </section>
+
+    <section id="check-screen" class="screen centered-screen" aria-labelledby="check-title" hidden>
+      <header class="compact-header">
+        <p class="step-label">音の確認</p>
+        <h1 id="check-title">ラ線（A線）を開放で<br>1回鳴らしてみて</h1>
+      </header>
+
+      <div class="listening-mark" aria-hidden="true">
+        <span></span><span></span><span></span><span></span><span></span>
+      </div>
+      <p id="check-status" class="check-status" role="status" aria-live="polite">マイクを準備しています</p>
+
+      <ol id="check-guidance" class="guidance-list" aria-label="音が取れないときの確認">
+        <li data-guide="volume" hidden>音が小さいときは、端末の近くで少し長めに鳴らします。</li>
+        <li data-guide="permission" hidden>Safariの設定で、このページのマイクが許可されているか確かめます。</li>
+        <li data-guide="noise" hidden>周囲の音が多いときは、少し静かな場所へ移ります。</li>
+      </ol>
+
+      <div class="check-actions">
+        <button id="without-mic-button" class="secondary-button" type="button">音を聞かずに譜読みだけ練習する</button>
+        <button id="check-cancel-button" class="text-button" type="button">設定へ戻る</button>
+      </div>
+    </section>
+
+    <section id="practice-screen" class="screen practice-screen" aria-labelledby="practice-title" hidden>
+      <header class="practice-header">
+        <div>
+          <p id="practice-count" class="step-label"></p>
+          <h1 id="practice-title">4音を左から</h1>
+        </div>
+        <div class="session-key" aria-label="現在の調">
+          <span>調</span>
+          <strong id="practice-key"></strong>
+        </div>
+      </header>
+
+      <p id="manual-notice" class="notice subtle-notice" hidden>音を聞かないモードです。弾けたら自分で次へ進みます。</p>
+
+      <div id="staff-wrap" class="staff-wrap" aria-live="polite"></div>
+
+      <div class="hold-area">
+        <div class="hold-labels">
+          <span>音を伸ばす</span>
+          <span id="note-count"></span>
+        </div>
+        <div id="hold-track" class="hold-track" role="progressbar" aria-label="音を伸ばせている時間" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+          <span id="hold-fill"></span>
+        </div>
+      </div>
+
+      <p id="practice-status" class="practice-status" role="status" aria-live="polite">いま明るくなっている音を弾きます。</p>
+
+      <div id="hint-panel" class="hint-panel" hidden>
+        <p id="hint-name" class="hint-name"></p>
+        <p id="hint-fingering" class="hint-fingering" hidden></p>
+        <p id="same-pitch-note" class="same-pitch-note" hidden></p>
+        <p id="fourth-finger-note" class="same-pitch-note" hidden>4の指は隣の開放弦と同じ高さ。音では区別できないので弦は自分で確かめて。</p>
+      </div>
+
+      <div class="practice-actions">
+        <button id="hint-button" class="secondary-button" type="button">わからない</button>
+        <button id="example-button" class="secondary-button" type="button">
+          おてほん
+          <small>長押しで4音</small>
+        </button>
+        <button id="manual-next-button" class="primary-button" type="button" hidden>弾けたので次へ</button>
+        <button id="skip-button" class="text-button" type="button">とばす</button>
+        <button id="quit-button" class="text-button danger-text" type="button">やめる</button>
+      </div>
+    </section>
+
+    <section id="result-screen" class="screen" aria-labelledby="result-title" hidden>
+      <header class="result-header">
+        <p class="eyebrow">今回出た音</p>
+        <h1 id="result-title">練習の記録</h1>
+        <p id="result-summary" class="result-summary"></p>
+        <p id="result-mode-note" class="result-mode-note" hidden></p>
+      </header>
+
+      <section class="result-section" aria-labelledby="trouble-title">
+        <h2 id="trouble-title">やり直した音</h2>
+        <ol id="trouble-list" class="trouble-list"></ol>
+      </section>
+
+      <p id="next-suggestion" class="next-suggestion"></p>
+
+      <details class="record-details">
+        <summary>今回出た音の記録を見る</summary>
+        <div id="record-list" class="record-list"></div>
+      </details>
+
+      <div class="result-actions">
+        <button id="retry-button" class="primary-button" type="button">もう一度</button>
+        <button id="back-button" class="secondary-button" type="button">設定へ</button>
+      </div>
+    </section>
+  </main>
+
+  <div id="intro-dialog" class="intro-dialog" role="dialog" aria-modal="true" aria-labelledby="intro-title" hidden>
+    <div class="intro-card">
+      <p class="eyebrow">最初にひとつ</p>
+      <h2 id="intro-title">音符の高さの見方</h2>
+      <div id="intro-staff" class="intro-staff" aria-hidden="true"></div>
+      <p>高さは黒い丸の位置で読みます。棒の向きは高さを変えません。</p>
+      <button id="intro-close-button" class="primary-button full-button" type="button">わかった</button>
+    </div>
+  </div>
+
+  <noscript>このアプリを使うにはJavaScriptを有効にしてください。</noscript>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

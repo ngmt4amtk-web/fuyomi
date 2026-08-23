@@ -1,0 +1,342 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ふよみ 五線譜プレビュー</title>
+  <style>
+    :root {
+      color-scheme: light;
+      font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", sans-serif;
+      background: #e8e6e1;
+      color: #252a2e;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      min-width: 900px;
+      margin: 0;
+      background:
+        radial-gradient(circle at 8% 0%, rgb(255 255 255 / 76%), transparent 34rem),
+        #e8e6e1;
+    }
+
+    main {
+      width: 900px;
+      margin: 0 auto;
+      padding: 22px 14px 30px;
+    }
+
+    header {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 24px;
+      margin-bottom: 16px;
+      padding: 0 10px;
+    }
+
+    h1,
+    h2,
+    p {
+      margin: 0;
+    }
+
+    h1 {
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: 25px;
+      font-weight: 600;
+      letter-spacing: 0.015em;
+    }
+
+    header p {
+      max-width: 430px;
+      color: #657078;
+      font-size: 11px;
+      line-height: 1.5;
+      letter-spacing: 0.035em;
+      text-align: right;
+    }
+
+    #preview {
+      display: grid;
+      gap: 14px;
+    }
+
+    .case {
+      display: grid;
+      gap: 7px;
+      padding-top: 12px;
+      border-top: 1px solid rgb(37 42 46 / 18%);
+    }
+
+    .case-heading {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      padding: 0 4px;
+    }
+
+    .case-title {
+      display: flex;
+      align-items: baseline;
+      gap: 10px;
+    }
+
+    .case-number {
+      color: #7b858c;
+      font: 600 10px/1 Georgia, "Times New Roman", serif;
+      letter-spacing: 0.16em;
+    }
+
+    h2 {
+      font-size: 13px;
+      line-height: 1.4;
+      font-weight: 650;
+    }
+
+    .phrase-label {
+      color: #657078;
+      font-size: 10px;
+      letter-spacing: 0.055em;
+    }
+
+    .width-badge {
+      min-width: 72px;
+      padding: 4px 8px;
+      border: 1px solid rgb(37 42 46 / 16%);
+      border-radius: 999px;
+      color: #525d64;
+      font: 650 10px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+      text-align: center;
+    }
+
+    .pair {
+      display: grid;
+      grid-template-columns: repeat(2, var(--device-width));
+      justify-content: center;
+      gap: 12px;
+    }
+
+    .sample {
+      width: var(--device-width);
+      min-width: 0;
+      margin: 0;
+      overflow: hidden;
+      border-radius: 12px;
+    }
+
+    .sample.light {
+      background: #fbfaf7;
+      color: #5d666c;
+      box-shadow:
+        inset 0 0 0 1px rgb(37 42 46 / 12%),
+        0 3px 16px rgb(34 39 42 / 6%);
+    }
+
+    .sample.dark {
+      background: #20262a;
+      color: #aeb8bf;
+      box-shadow:
+        inset 0 0 0 1px rgb(255 255 255 / 9%),
+        0 3px 18px rgb(0 0 0 / 16%);
+    }
+
+    .sample-label {
+      display: flex;
+      justify-content: space-between;
+      padding: 8px 11px 0;
+      font-size: 9px;
+      line-height: 1;
+      letter-spacing: 0.11em;
+      text-transform: uppercase;
+    }
+
+    .staff-slot,
+    .staff-slot svg {
+      display: block;
+      width: var(--device-width);
+    }
+
+    .inspection {
+      min-height: 29px;
+      padding: 4px 11px 9px;
+      color: currentColor;
+      font-size: 10px;
+      line-height: 1.45;
+      letter-spacing: 0.02em;
+    }
+
+    footer {
+      margin-top: 15px;
+      padding: 12px 10px 0;
+      border-top: 1px solid rgb(37 42 46 / 18%);
+      color: #657078;
+      font-size: 10px;
+      line-height: 1.6;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>Staff engraving proof</h1>
+      <p>iPhone実幅 375 / 390 / 430px。各カード内のSVGを縮小せず、同じ出題をlight / darkで比較する。</p>
+    </header>
+    <div id="preview"></div>
+    <footer>4音は出題規則に合わせ、順次進行を主体・跳躍は最大1回・終止音は安定音にしている。</footer>
+  </main>
+
+  <script type="module">
+    import { renderStaff } from '../js/staff.js';
+
+    const note = (midi, stringId, finger, nameJa, state = 'todo', showHint = false) => ({
+      midi,
+      state,
+      hint: showHint ? { stringId, finger, nameJa } : null,
+    });
+
+    const cases = [
+      {
+        level: 1,
+        width: 375,
+        title: 'ラ線だけ · A major',
+        phrase: 'レ5 → ド♯5 → シ4 → ラ4',
+        inspection: '見る: イ長調の調号3つ／4音の等間隔',
+        key: 'A',
+        notes: [
+          note(74, 'A', 3, 'レ', 'current'),
+          note(73, 'A', 2, 'ド♯'),
+          note(71, 'A', 1, 'シ'),
+          note(69, 'A', 0, 'ラ'),
+        ],
+      },
+      {
+        level: 2,
+        width: 390,
+        title: 'ミ線だけ · A major',
+        phrase: 'ミ5 → ファ♯5 → ソ♯5 → ラ5',
+        inspection: '見る: 上加線1本／高音域の下向き符幹',
+        key: 'A',
+        notes: [
+          note(76, 'E', 0, 'ミ', 'done'),
+          note(78, 'E', 1, 'ファ♯', 'current'),
+          note(80, 'E', 2, 'ソ♯'),
+          note(81, 'E', 3, 'ラ'),
+        ],
+      },
+      {
+        level: 3,
+        width: 430,
+        title: 'ラ線とミ線 · A major',
+        phrase: 'シ4 → ド♯5 → レ5 → ミ5',
+        inspection: '見る: ラ線からミ線への移行／帯が五線の背面',
+        key: 'A',
+        notes: [
+          note(71, 'A', 1, 'シ', 'done'),
+          note(73, 'A', 2, 'ド♯', 'done'),
+          note(74, 'A', 3, 'レ', 'current'),
+          note(76, 'E', 0, 'ミ'),
+        ],
+      },
+      {
+        level: 4,
+        width: 375,
+        title: 'レ線とソ線 · A major',
+        phrase: 'ソ3 → ラ3 → シ3 → ド♯4',
+        inspection: '見る: 開放ソの♮／下加線2本',
+        key: 'A',
+        notes: [
+          note(55, 'G', 0, 'ソ', 'current', true),
+          note(57, 'G', 1, 'ラ'),
+          note(59, 'G', 2, 'シ'),
+          note(61, 'G', 3, 'ド♯'),
+        ],
+      },
+      {
+        level: 5,
+        width: 390,
+        title: '4本ぜんぶ · C major',
+        phrase: 'ファ4 → ソ4 → ラ4 → ド5',
+        inspection: '見る: レ線からラ線への移行／3度の跳躍は1回',
+        key: 'C',
+        notes: [
+          note(65, 'D', 2, 'ファ', 'done'),
+          note(67, 'D', 3, 'ソ', 'done'),
+          note(69, 'A', 0, 'ラ', 'current'),
+          note(72, 'A', 2, 'ド'),
+        ],
+      },
+      {
+        level: 6,
+        width: 430,
+        title: '4の指まで · A major',
+        phrase: 'レ5 → ミ5 → ファ♯5 → ラ5',
+        inspection: '見る: ラ線4（ミ線開放と同じ高さ）／上加線1本',
+        key: 'A',
+        notes: [
+          note(74, 'A', 3, 'レ', 'done'),
+          note(76, 'A', 4, 'ミ', 'current', true),
+          note(78, 'E', 1, 'ファ♯'),
+          note(81, 'E', 3, 'ラ'),
+        ],
+      },
+    ];
+
+    const preview = document.querySelector('#preview');
+    for (const sampleCase of cases) {
+      const section = document.createElement('section');
+      section.className = 'case';
+      section.dataset.level = String(sampleCase.level);
+      section.dataset.deviceWidth = String(sampleCase.width);
+
+      const heading = document.createElement('div');
+      heading.className = 'case-heading';
+
+      const title = document.createElement('div');
+      title.className = 'case-title';
+      title.innerHTML = `<span class="case-number">L${sampleCase.level}</span><h2>${sampleCase.title}</h2><span class="phrase-label">${sampleCase.phrase}</span>`;
+
+      const widthBadge = document.createElement('span');
+      widthBadge.className = 'width-badge';
+      widthBadge.textContent = `${sampleCase.width}px 実幅`;
+      heading.append(title, widthBadge);
+
+      const pair = document.createElement('div');
+      pair.className = 'pair';
+      pair.style.setProperty('--device-width', `${sampleCase.width}px`);
+
+      for (const theme of ['light', 'dark']) {
+        const sample = document.createElement('figure');
+        sample.className = `sample ${theme}`;
+        sample.setAttribute('aria-label', `レベル${sampleCase.level} ${theme} ${sampleCase.width}px`);
+
+        const sampleLabel = document.createElement('div');
+        sampleLabel.className = 'sample-label';
+        sampleLabel.innerHTML = `<span>${theme}</span><span>${sampleCase.width}px actual</span>`;
+
+        const slot = document.createElement('div');
+        slot.className = 'staff-slot';
+        slot.insertAdjacentHTML('beforeend', renderStaff({
+          key: sampleCase.key,
+          notes: sampleCase.notes,
+          width: sampleCase.width,
+          theme,
+        }));
+
+        const inspection = document.createElement('figcaption');
+        inspection.className = 'inspection';
+        inspection.textContent = sampleCase.inspection;
+        sample.append(sampleLabel, slot, inspection);
+        pair.append(sample);
+      }
+
+      section.append(heading, pair);
+      preview.append(section);
+    }
+  </script>
+</body>
+</html>
