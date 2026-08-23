@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>ふよみ ト音記号 骨格検証</title>
+  <title>ふよみ Bravuraト音記号 輪郭検証</title>
   <style>
     :root {
       color-scheme: light;
@@ -208,20 +208,19 @@
 <body>
   <main>
     <header>
-      <h1>Treble clef skeleton proof</h1>
-      <p>G4線を y=0 とする一本の stroked path<br>尾・交差・渦中心を五線間隔座標で確認</p>
+      <h1>Treble clef outline proof</h1>
+      <p>Bravura 1.204 · U+E050 · unitsPerEm 1000<br>外部フォントを読まず、抽出済み輪郭を fill で描画</p>
     </header>
 
     <section class="comparison" aria-label="ト音記号の3つの表示寸法">
       <article class="card">
         <div class="card-heading">
           <h2>a　記号単体</h2>
-          <span class="measure">骨格高 400px 以上</span>
+          <span class="measure">filled outline · 4 contours</span>
         </div>
         <div class="hero-stage">
-          <svg viewBox="-1.8 -4.9 3.6 8.8" role="img" aria-label="大きく表示したト音記号">
-            <path data-clef-path fill="none" stroke="#252a2e" stroke-width="0.40"
-              stroke-linecap="round" stroke-linejoin="round"/>
+          <svg viewBox="-0.25 -4.65 3.18 7.55" role="img" aria-label="大きく表示したBravuraのト音記号">
+            <path data-clef-path fill="#252a2e"/>
           </svg>
         </div>
       </article>
@@ -234,7 +233,7 @@
         <div class="actual-stage">
           <div id="staff-12" class="staff-12"></div>
         </div>
-        <div class="ruler"><span>線間 12px</span><span>線幅 4.8px</span></div>
+        <div class="ruler"><span>線間 12px</span><span>五線幅 1.5px</span></div>
       </article>
 
       <article class="card">
@@ -245,47 +244,47 @@
         <div class="actual-stage">
           <div id="staff-8" class="staff-8"></div>
         </div>
-        <div class="ruler"><span>線間 8px</span><span>線幅 3.2px</span></div>
+        <div class="ruler"><span>線間 8px</span><span>五線幅 1px</span></div>
       </article>
     </section>
 
-    <section class="marker-card" aria-label="骨格の基準点">
+    <section class="marker-card" aria-label="Bravura輪郭の基準値">
       <div class="marker-stage">
-        <svg viewBox="-1.9 -4.85 7.1 8.9" role="img" aria-label="五線と骨格の3つの基準点">
+        <svg viewBox="-0.45 -4.68 8.05 7.65" role="img" aria-label="五線とBravura輪郭の3つの基準値">
           <g fill="none" stroke="#9aa4aa" stroke-width="0.055" stroke-linecap="round">
-            <path d="M -1.55 1 H 4.75"/>
-            <path d="M -1.55 0 H 4.75"/>
-            <path d="M -1.55 -1 H 4.75"/>
-            <path d="M -1.55 -2 H 4.75"/>
-            <path d="M -1.55 -3 H 4.75"/>
+            <path d="M -0.2 1 H 7.35"/>
+            <path d="M -0.2 0 H 7.35"/>
+            <path d="M -0.2 -1 H 7.35"/>
+            <path d="M -0.2 -2 H 7.35"/>
+            <path d="M -0.2 -3 H 7.35"/>
           </g>
-          <path data-clef-path fill="none" stroke="#252a2e" stroke-width="0.40"
-            stroke-linecap="round" stroke-linejoin="round"/>
+          <path data-clef-path fill="#252a2e"/>
 
-          <g font-family="-apple-system, BlinkMacSystemFont, sans-serif" font-size="0.34">
+          <g font-family="-apple-system, BlinkMacSystemFont, sans-serif" font-size="0.29">
             <g fill="#bf725f" stroke="#bf725f">
-              <circle cx="-0.34" cy="3.40" r="0.13" fill="#fff" stroke-width="0.07"/>
-              <path d="M -0.18 3.34 L 1.62 2.92" fill="none" stroke-width="0.055"/>
-              <text x="1.76" y="3.02" stroke="none">尾の終端　y = −3.4</text>
+              <circle cx="1.288" cy="2.632" r="0.12" fill="#fff" stroke-width="0.065"/>
+              <path d="M 1.43 2.59 L 3.12 2.30" fill="none" stroke-width="0.05"/>
+              <text x="3.28" y="2.39" stroke="none">下端 +2.632 · 最下線から1.632線間下</text>
             </g>
             <g fill="#6d8e9f" stroke="#6d8e9f">
-              <circle cx="0.10" cy="-1.00" r="0.13" fill="#fff" stroke-width="0.07"/>
-              <path d="M 0.25 -1.04 L 1.62 -1.62" fill="none" stroke-width="0.055"/>
-              <text x="1.76" y="-1.52" stroke="none">交差点　y = +1.0</text>
+              <circle cx="1.82" cy="-4.392" r="0.12" fill="#fff" stroke-width="0.065"/>
+              <path d="M 1.97 -4.34 L 3.12 -3.93" fill="none" stroke-width="0.05"/>
+              <text x="3.28" y="-3.84" stroke="none">上端 −4.392 · 最上線から1.392線間上</text>
             </g>
             <g fill="#718d67" stroke="#718d67">
-              <circle cx="0" cy="0" r="0.13" fill="#fff" stroke-width="0.07"/>
-              <path d="M 0.16 0.04 L 1.62 0.62" fill="none" stroke-width="0.055"/>
-              <text x="1.76" y="0.72" stroke="none">渦の中心　y = 0</text>
+              <circle cx="2.036" cy="0.150" r="0.12" fill="#fff" stroke-width="0.065"/>
+              <path d="M 2.18 0.18 L 3.12 0.52" fill="none" stroke-width="0.05"/>
+              <text x="3.28" y="0.61" stroke="none">G4を囲む渦の中心 +0.150線間</text>
             </g>
           </g>
         </svg>
       </div>
       <div class="marker-copy">
-        <h2>骨格の読みどころ</h2>
-        <p><strong>赤</strong>は最下線より2.4線間下へ出る尾。<br>
-          <strong>青</strong>は上の張り出しから降りた弧と縦の流れの交差。<br>
-          <strong>緑</strong>は下から2番目の線、G4に置いた渦の中心。</p>
+        <h2>輪郭座標の検算</h2>
+        <p>五線間隔を1、G4線を y=0、SVGの下向きを正とする。<br>
+          <strong>赤</strong>と<strong>青</strong>はBravura輪郭の実測端。上下とも五線外へ必要量が出る。<br>
+          <strong>緑</strong>はG4を囲む閉輪郭の外接矩形中心で、許容値 ±0.2線間に入る。<br>
+          変換式は x′=4x/1000、y′=−4y/1000。</p>
       </div>
     </section>
   </main>

@@ -6,6 +6,7 @@
   <meta name="theme-color" content="#f3f1ec" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#171b1d" media="(prefers-color-scheme: dark)">
   <meta name="description" content="大人の初心者が、4音ずつ五線譜を読んでバイオリンで確かめる練習アプリ">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'/%3E">
   <title>ふよみ</title>
   <link rel="stylesheet" href="css/style.css">
 </head>
@@ -114,49 +115,55 @@
     </section>
 
     <section id="practice-screen" class="screen practice-screen" aria-labelledby="practice-title" hidden>
-      <header class="practice-header">
-        <div>
-          <p id="practice-count" class="step-label"></p>
-          <h1 id="practice-title">4音を左から</h1>
-        </div>
-        <div class="session-key" aria-label="現在の調">
-          <span>調</span>
-          <strong id="practice-key"></strong>
-        </div>
-      </header>
+      <div class="practice-top">
+        <header class="practice-header">
+          <div>
+            <p id="practice-count" class="step-label"></p>
+            <h1 id="practice-title">4音を左から</h1>
+          </div>
+          <div class="session-key" aria-label="現在の調">
+            <span>調</span>
+            <strong id="practice-key"></strong>
+          </div>
+        </header>
 
-      <p id="manual-notice" class="notice subtle-notice" hidden>音を聞かないモードです。弾けたら自分で次へ進みます。</p>
+        <p id="manual-notice" class="notice subtle-notice" hidden>音を聞かないモードです。弾けたら自分で次へ進みます。</p>
+      </div>
 
-      <div id="staff-wrap" class="staff-wrap" aria-live="polite"></div>
+      <div class="practice-stage">
+        <div id="staff-wrap" class="staff-wrap" aria-live="polite"></div>
 
-      <div class="hold-area">
-        <div class="hold-labels">
-          <span>音を伸ばす</span>
-          <span id="note-count"></span>
-        </div>
-        <div id="hold-track" class="hold-track" role="progressbar" aria-label="音を伸ばせている時間" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
-          <span id="hold-fill"></span>
+        <div class="hold-area">
+          <div class="hold-labels">
+            <span>音を伸ばす</span>
+            <span id="note-count"></span>
+          </div>
+          <div id="hold-track" class="hold-track" role="progressbar" aria-label="音を伸ばせている時間" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+            <span id="hold-fill"></span>
+          </div>
         </div>
       </div>
 
-      <p id="practice-status" class="practice-status" role="status" aria-live="polite">いま明るくなっている音を弾きます。</p>
+      <div class="practice-controls">
+        <p id="practice-status" class="practice-status" role="status" aria-live="polite">いま明るくなっている音を弾きます。</p>
 
-      <div id="hint-panel" class="hint-panel" hidden>
-        <p id="hint-name" class="hint-name"></p>
-        <p id="hint-fingering" class="hint-fingering" hidden></p>
-        <p id="same-pitch-note" class="same-pitch-note" hidden></p>
-        <p id="fourth-finger-note" class="same-pitch-note" hidden>4の指は隣の開放弦と同じ高さ。音では区別できないので弦は自分で確かめて。</p>
-      </div>
+        <div id="hint-panel" class="hint-panel" hidden>
+          <p id="hint-name" class="hint-name"></p>
+          <p id="hint-fingering" class="hint-fingering" hidden></p>
+          <p id="same-pitch-note" class="same-pitch-note" hidden></p>
+          <p id="fourth-finger-note" class="same-pitch-note" hidden>4の指は隣の開放弦と同じ高さ。音では区別できないので弦は自分で確かめて。</p>
+        </div>
 
-      <div class="practice-actions">
-        <button id="hint-button" class="secondary-button" type="button">わからない</button>
-        <button id="example-button" class="secondary-button" type="button">
-          おてほん
-          <small>長押しで4音</small>
-        </button>
-        <button id="manual-next-button" class="primary-button" type="button" hidden>弾けたので次へ</button>
-        <button id="skip-button" class="text-button" type="button">とばす</button>
-        <button id="quit-button" class="text-button danger-text" type="button">やめる</button>
+        <div class="practice-actions">
+          <button id="hint-button" class="secondary-button" type="button">わからない</button>
+          <button id="example-button" class="secondary-button" type="button">
+            おてほん
+            <small>長押しで4音</small>
+          </button>
+          <button id="manual-next-button" class="primary-button" type="button" hidden>弾けたので次へ</button>
+          <button id="skip-button" class="text-button" type="button">とばす</button>
+          <button id="quit-button" class="text-button danger-text" type="button">やめる</button>
+        </div>
       </div>
     </section>
 

@@ -1,5 +1,11 @@
-import { LEVELS, makePhrase } from './phrase.js';
-import { TOL, createHolder, createMic, detect, judgeNote } from './pitch.js';
+import { LEVELS, makePhrase as defaultMakePhrase } from './phrase.js';
+import {
+  TOL,
+  createHolder as defaultCreateHolder,
+  createMic as defaultCreateMic,
+  detect as defaultDetect,
+  judgeNote as defaultJudgeNote,
+} from './pitch.js';
 import {
   KEYS,
   STRINGS,
@@ -9,7 +15,40 @@ import {
   noteNameJa,
   positionsForMidi,
 } from './theory.js';
-import { renderStaff } from './staff.js';
+import { renderStaff as defaultRenderStaff } from './staff.js';
+
+export function createFuyomiApp(dependencies = {}) {
+const window = dependencies.window ?? globalThis.window;
+const document = dependencies.document ?? globalThis.document;
+if (!window || !document) throw new TypeError('app の起動には window と document が必要です');
+
+const clock = dependencies.clock ?? {
+  now: () => window.performance.now(),
+  setTimeout: (callback, delay) => window.setTimeout(callback, delay),
+  clearTimeout: (timer) => window.clearTimeout(timer),
+  requestAnimationFrame: (callback) => window.requestAnimationFrame(callback),
+  cancelAnimationFrame: (frame) => window.cancelAnimationFrame(frame),
+};
+const microphone = dependencies.microphone ?? {};
+const createMic = microphone.create ?? defaultCreateMic;
+const detect = microphone.detect ?? defaultDetect;
+const createHolder = dependencies.createHolder ?? defaultCreateHolder;
+const judgeNote = dependencies.judgeNote ?? defaultJudgeNote;
+const makePhrase = dependencies.makePhrase ?? defaultMakePhrase;
+const renderStaff = dependencies.renderStaff ?? defaultRenderStaff;
+const localStorage = dependencies.storage ?? window.localStorage;
+const navigator = dependencies.navigator ?? window.navigator ?? globalThis.navigator;
+const ResizeObserver = dependencies.ResizeObserver ?? window.ResizeObserver ?? globalThis.ResizeObserver;
+const performance = {now: () => clock.now()};
+const requestAnimationFrame = (callback) => clock.requestAnimationFrame(callback);
+const cancelAnimationFrame = (frame) => clock.cancelAnimationFrame(frame);
+const microphoneAvailable = () => {
+  if (typeof microphone.available === 'function') return Boolean(microphone.available());
+  if (Object.hasOwn(microphone, 'available')) return Boolean(microphone.available);
+  // create を注入した検証環境は、ブラウザの navigator とは独立してマイクを提供できる。
+  if (typeof microphone.create === 'function') return true;
+  return Boolean(navigator?.mediaDevices?.getUserMedia);
+};
 
 const STORAGE_KEY = 'fuyomi';
 const DEFAULTS = Object.freeze({
@@ -106,6 +145,7 @@ const state = {
   hintStage: 0,
   missFlash: false,
   processing: false,
+  voiceMuteUntil: 0,
   records: [],
 };
 
@@ -113,14 +153,6 @@ const colorScheme = window.matchMedia('(prefers-color-scheme: dark)');
 
 function currentTheme() {
   return colorScheme.matches ? 'dark' : 'light';
-}
-
-function browserSafeStaff(options) {
-  /*
-   * SVGのheight属性はautoを値に取れず、Chromeが描画のたびにエラーを記録する。
-   * 完成品のstaff.jsは変更せず、HTMLへ渡す境界で無効な属性だけを外す。
-   */
-  return renderStaff(options).replace(' height="auto"', '');
 }
 
 function readStorage() {
@@ -278,7 +310,7 @@ function showScreen(name) {
 }
 
 function later(callback, delay, token = state.sessionId) {
-  const timer = window.setTimeout(() => {
+  const timer = clock.setTimeout(() => {
     state.timers.delete(timer);
     if (token === state.sessionId) callback();
   }, delay);
@@ -287,7 +319,7 @@ function later(callback, delay, token = state.sessionId) {
 }
 
 function clearTimers() {
-  state.timers.forEach((timer) => window.clearTimeout(timer));
+  state.timers.forEach((timer) => clock.clearTimeout(timer));
   state.timers.clear();
 }
 
@@ -352,7 +384,7 @@ function queueManualPractice(message, token, delay = 1600) {
 }
 
 function micFailureMessage(error) {
-  if (!navigator.mediaDevices?.getUserMedia) {
+  if (!microphoneAvailable()) {
     return 'この環境ではマイクを使えません。音を聞かないモードへ切り替えます。';
   }
   if (error?.name === 'NotAllowedError' || error?.name === 'SecurityError') {
@@ -365,7 +397,7 @@ function micFailureMessage(error) {
 }
 
 async function startMicrophone(token) {
-  if (!navigator.mediaDevices?.getUserMedia) {
+  if (!microphoneAvailable()) {
     queueManualPractice(micFailureMessage(), token);
     return;
   }
@@ -380,6 +412,8 @@ async function startMicrophone(token) {
     elements.checkStatus.textContent = '音を待っています';
     startAudioLoop(token);
   } catch (error) {
+    // 自動フォールバックや「音を聞かない」選択の後に届いた失敗は、現在の練習を触らない。
+    if (token !== state.sessionId || state.screen !== 'check') return;
     queueManualPractice(micFailureMessage(error), token);
   }
 }
@@ -399,6 +433,7 @@ function startSession(config) {
   state.outcomes = [];
   state.hintStage = 0;
   state.missFlash = false;
+  state.voiceMuteUntil = 0;
   state.records = [];
 
   resetCheckView();
@@ -423,17 +458,20 @@ function confirmSound(token) {
 }
 
 function buildCandidates(config) {
-  const level = LEVELS[config.level];
-  return level.strings.flatMap((stringId) => {
-    const string = STRING_BY_ID.get(stringId);
-    return fingering(string.midi, config.key)
-      .filter((position) => position.finger <= level.maxFinger)
-      .map((position) => ({
+  const byMidi = new Map();
+  for (const string of STRINGS) {
+    for (const position of fingering(string.midi, config.key)) {
+      const candidate = {
         midi: position.midi,
-        stringId,
+        stringId: string.id,
         finger: position.finger,
-      }));
-  });
+      };
+      const current = byMidi.get(candidate.midi);
+      // 出題範囲ではなく全4弦を競合させ、同じ高さだけは押さえる指の少ない運指を代表にする。
+      if (!current || candidate.finger < current.finger) byMidi.set(candidate.midi, candidate);
+    }
+  }
+  return [...byMidi.values()].sort((left, right) => left.midi - right.midi);
 }
 
 function beginPractice(token, listenMode) {
@@ -442,6 +480,8 @@ function beginPractice(token, listenMode) {
   state.listenMode = listenMode && Boolean(state.mic);
   state.manualTransitionQueued = false;
   state.holder = createHolder(TOL[state.config.tolerance]);
+  // 音確認で伸ばした音を最初の出題へ持ち越さず、いったん途切れてから受け付ける。
+  state.holder.reset();
 
   if (!state.listenMode) {
     if (state.animationFrame) cancelAnimationFrame(state.animationFrame);
@@ -507,7 +547,6 @@ function startCurrentRecord() {
     record.hints.add('音名（最初から）');
     record.hints.add('推奨運指（最初から）');
   }
-  state.holder?.reset();
   updateHoldProgress(0);
 }
 
@@ -516,11 +555,20 @@ function nearestMidi(freq) {
 }
 
 function processPracticeAudio(now, detection, token) {
-  if (state.processing || !state.holder || token !== state.sessionId) return;
+  if (!state.holder || token !== state.sessionId) return;
+  const tolerance = TOL[state.config.tolerance];
+  const voiced = detection.f > 0 && detection.conf > tolerance.conf;
+
+  if (state.processing) {
+    // 表示待ちの間も無声だけは holder へ渡し、判定後の再武装を見落とさない。
+    if (!voiced) state.holder.feed(now, detection);
+    return;
+  }
+
   const record = currentRecord();
   if (!record) return;
 
-  if (detection.f > 0 && detection.conf > TOL[state.config.tolerance].conf && record.firstVoiceMs == null) {
+  if (voiced && now >= state.voiceMuteUntil && record.firstVoiceMs == null) {
     record.firstVoiceMs = Math.max(0, now - record.shownAt);
   }
 
@@ -535,7 +583,7 @@ function processPracticeAudio(now, detection, token) {
     freq: held.freq,
     targetMidi: note.midi,
     candidates: buildCandidates(state.config),
-    cfg: TOL[state.config.tolerance],
+    cfg: tolerance,
     a4: state.config.a4,
   });
 
@@ -637,7 +685,13 @@ function missCurrentNote(result, token) {
   state.holder.reset();
   updateHoldProgress(0);
 
-  const heard = result.heard || buildCandidates(state.config)[0];
+  const heard = result.heard;
+  if (!heard
+    || !Number.isFinite(heard.midi)
+    || typeof heard.stringId !== 'string'
+    || !Number.isInteger(heard.finger)) {
+    throw new TypeError('judgeNote は不合格時に heard を返す契約です');
+  }
   const stringLabel = STRING_BY_ID.get(heard.stringId)?.label || `${heard.stringId}線`;
   elements.practiceStatus.textContent = `いまのは ${noteNameJa(heard.midi)} の高さに聞こえたよ（${stringLabel}の${heard.finger}の高さ）`;
   renderPractice();
@@ -756,12 +810,15 @@ function alternatePositionText(note) {
 
 function renderPractice() {
   if (!state.phrase || state.screen !== 'practice') return;
-  const width = Math.max(300, Math.round(elements.staffWrap.getBoundingClientRect().width || 400));
-  elements.staffWrap.innerHTML = browserSafeStaff({
+  const displayWidth = Math.max(280, Math.round(elements.staffWrap.clientWidth || 400));
+  const staffNotes = buildStaffNotes();
+  const theme = currentTheme();
+  // 横の必要幅はstaff.jsが線間単位で積算するため、DOMの実幅をそのまま渡す。
+  elements.staffWrap.innerHTML = renderStaff({
     key: state.config.key,
-    notes: buildStaffNotes(),
-    width,
-    theme: currentTheme(),
+    notes: staffNotes,
+    width: displayWidth,
+    theme,
   });
 
   elements.practiceCount.textContent = `${state.phraseIndex + 1} / ${state.config.count} フレーズ`;
@@ -850,7 +907,9 @@ async function playSequence(midis, { noteDuration = 0.52, gap = 0.09, chord = fa
       ? noteDuration
       : midis.length * noteDuration + Math.max(0, midis.length - 1) * gap;
     const duration = Math.ceil(seconds * 1000) + 90;
-    state.holder?.muteUntil(performance.now() + duration + 140);
+    const muteUntil = performance.now() + duration + 140;
+    state.voiceMuteUntil = Math.max(state.voiceMuteUntil, muteUntil);
+    state.holder?.muteUntil(muteUntil);
     updateHoldProgress(0);
     return duration;
   } catch {
@@ -927,9 +986,18 @@ function aggregateTrouble() {
   const grouped = new Map();
   state.records.forEach((record, index) => {
     if (record.retries <= 0) return;
-    const key = `${record.stringId}:${record.finger}:${record.midi}`;
-    const existing = grouped.get(key) || { ...record, retries: 0, firstIndex: index };
+    const key = record.midi;
+    const existing = grouped.get(key) || {
+      midi:record.midi,
+      retries:0,
+      firstIndex:index,
+      fingerings:[],
+    };
     existing.retries += record.retries;
+    if (!existing.fingerings.some(fingering =>
+      fingering.stringId === record.stringId && fingering.finger === record.finger)) {
+      existing.fingerings.push({stringId:record.stringId, finger:record.finger});
+    }
     grouped.set(key, existing);
   });
   return [...grouped.values()]
@@ -975,8 +1043,11 @@ function renderResults() {
   } else {
     trouble.forEach((record) => {
       const item = document.createElement('li');
-      const stringLabel = STRING_BY_ID.get(record.stringId)?.label || `${record.stringId}線`;
-      item.textContent = `${stringLabel}の${record.finger}（${noteNameJa(record.midi)}）で${record.retries}回やり直した`;
+      const fingerings = record.fingerings.map(fingering => {
+        const stringLabel = STRING_BY_ID.get(fingering.stringId)?.label || `${fingering.stringId}線`;
+        return `${stringLabel}の${fingering.finger}`;
+      }).join('／');
+      item.textContent = `${noteNameJa(record.midi)}で${record.retries}回やり直した（勧めた運指: ${fingerings}）`;
       elements.troubleList.append(item);
     });
   }
@@ -1031,7 +1102,7 @@ function returnToSettings() {
 }
 
 function renderIntroStaff() {
-  elements.introStaff.innerHTML = browserSafeStaff({
+  elements.introStaff.innerHTML = renderStaff({
     key: 'C',
     notes: [
       { midi: 69, state: 'current', hint: null },
@@ -1081,14 +1152,14 @@ let exampleLongPressed = false;
 elements.exampleButton.addEventListener('pointerdown', (event) => {
   if (event.button !== 0 && event.pointerType === 'mouse') return;
   exampleLongPressed = false;
-  window.clearTimeout(exampleHoldTimer);
-  exampleHoldTimer = window.setTimeout(() => {
+  clock.clearTimeout(exampleHoldTimer);
+  exampleHoldTimer = clock.setTimeout(() => {
     exampleLongPressed = true;
     void playExample(true);
   }, 560);
 });
 ['pointerup', 'pointercancel', 'pointerleave'].forEach((type) => {
-  elements.exampleButton.addEventListener(type, () => window.clearTimeout(exampleHoldTimer));
+  elements.exampleButton.addEventListener(type, () => clock.clearTimeout(exampleHoldTimer));
 });
 elements.exampleButton.addEventListener('click', () => {
   if (exampleLongPressed) {
@@ -1128,3 +1199,14 @@ window.addEventListener('pagehide', () => {
 populateSettings(initialSettings);
 showScreen('setup');
 showIntroIfNeeded();
+
+return Object.freeze({
+  destroy(){
+    invalidateSession();
+  },
+});
+}
+
+if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+  createFuyomiApp({window, document});
+}

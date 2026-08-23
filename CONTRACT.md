@@ -51,15 +51,28 @@ export function makePhrase({level, key, length=4, prev=null, rng=Math.random})
 ## js/pitch.js（ゆびいろからの移植・実装済み）
 ```js
 export const TOL = { loose:{hold:225,spread:170,tol:90,conf:0.22}, mid:{300,130,70,0.30}, tight:{400,90,45,0.38} };
-export const RESCUE_MAX_CENTS = 250;  // 救済の上限（decisions.md 採用3）
+export const RESCUE_MAX_CENTS = 250;  // 第2段の音域外安全弁（decisions.md 採用10・11）
 export function detect(x, sr)          // → {f, conf, rms}  YIN/CMND
 export function median(a)
 export async function createMic()      // → {read(), sampleRate, close(), ctx}
 export function createHolder(cfg)      // → {feed(now,det), progress(), reset(), muteUntil(t)}
 export function judgeNote({freq, targetMidi, candidates, cfg, a4})
-// → {ok:true, cents} | {ok:false, heard:{midi,stringId,finger}, cents}
-// 3段の救済。ただし第2段・第3段は |cents| <= RESCUE_MAX_CENTS のときだけ有効。
+// candidates は非空。現在の調で第1ポジションから出せる4弦すべての音を渡し、
+// 同じmidiは指の少ない運指を代表に1つだけ残す。出題レベルの範囲には狭めない。
+// → {ok:true, cents, oct?:true} | {ok:false, heard:{midi,stringId,finger}, cents}
+// 3段の判定:
+//  1. 目標までの生の距離が |cents| <= cfg.tol なら正解。
+//  2. 生の距離が |cents| <= RESCUE_MAX_CENTS かつ、生の最近傍候補が目標なら正解。
+//  3. 目標までの距離をオクターブで畳み、その距離が |cents| <= cfg.tol なら
+//     {ok:true, cents, oct:true}。第3段に RESCUE_MAX_CENTS は適用しない。
 ```
+
+`createMic()` は `getUserMedia()` 成功後の初期化に失敗した場合、取得済みの全トラックを停止し、
+作成済み `AudioContext` があれば閉じてから元の失敗を再スローする。
+
+`createHolder(cfg)` は生成直後だけ有声を受け付ける。`reset()` と `muteUntil(t)` は保持を捨てて
+受付を閉じ、期限外で無声を1フレーム観測した後に再武装する。通常の保持中は、220msを超える
+無声で保持を捨てる。短い検出抜けを許容する220msと、判定間の再武装条件は別である。
 
 ## js/staff.js（document を使わない・実装済み）
 ```js
@@ -69,9 +82,28 @@ export function renderStaff({key, notes, width, theme})
 export const CLEF_PATH
 ```
 
-## js/app.js（これから作る）
+## js/app.js
 上記を組み合わせる。DOM・localStorage（キー `fuyomi`）・URLクエリでの設定上書き・
 音の確認画面・練習画面・結果画面・おてほんの音。詳細は `docs/decisions.md` に従う。
+
+```js
+export function createFuyomiApp(dependencies = {}) // → {destroy()}
+```
+
+`dependencies` では `window`・`document`・`clock`・`microphone` を差し替えられる。
+`clock` は `{now, setTimeout, clearTimeout, requestAnimationFrame, cancelAnimationFrame}`、
+`microphone` は `{create, detect, available?}` の形にする。
+状態機械を決定的に検証するため、同じ境界から `storage`・`navigator`・`ResizeObserver` と、
+既存契約を実装する `createHolder`・`judgeNote`・`makePhrase`・`renderStaff` も注入できる。
+返り値は実行資源を破棄する `destroy()` だけで、内部状態を読み書きする操作は公開しない。
+
+- `makePhrase` の出題範囲はレベルに従う。`judgeNote` の候補はレベルに狭めず、現在の調の
+  第1ポジションで4弦から出せる全音高を使う。
+- 判定後は holder を `reset()` し、画面遷移待ちの間も無声を観測して再武装する。
+- おてほんの `muteUntil` 中は判定と `firstVoiceMs` の採取を行わない。
+- マイク取得の非同期結果は、開始時と同じセッションかつ音確認画面にいる間だけ採用する。
+- 結果のやり直し回数はmidiで集計し、音名を主語、勧めた運指を従属情報として表示する。
+- セッション無効化時はタイマー・rAF・発振器・マイク・AudioContextを解放する。
 
 ## tests/run.mjs
 node 22 の標準機能だけ（`node:test` / `node:assert`）。`node tests/run.mjs` が exit 0 で緑。

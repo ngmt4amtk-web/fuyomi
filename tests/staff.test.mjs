@@ -1,8 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
+import { LEVELS } from '../js/phrase.js';
 import { CLEF_PATH, renderStaff } from '../js/staff.js';
-import { midiToStaff } from '../js/theory.js';
+import { STRINGS, fingering, midiToStaff } from '../js/theory.js';
 
 const WIDTH = 400;
 
@@ -87,7 +88,7 @@ function cubicExtrema(p0, p1, p2, p3) {
 }
 
 /*
- * ブラウザの getBBox に頼らず、M/L/H/V/C/Z だけでできた自前パスの外接矩形を求める。
+ * ブラウザの getBBox に頼らず、M/L/H/V/C/Z だけでできた埋め込みパスの外接矩形を求める。
  * C は制御点の箱ではなく導関数の極値を使い、実際の曲線の範囲を検査する。
  */
 function pathGeometry(d) {
@@ -181,123 +182,6 @@ function pathGeometry(d) {
   return { bounds, subpathBounds, end: { x, y } };
 }
 
-// ト音記号の骨格は曲線途中の交差と横幅を検べる必要があるため、細分した点列でも測る。
-function sampleCubicPath(d, stepsPerCurve = 80) {
-  const tokens = d.match(/[A-Za-z]|[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?/g) || [];
-  const points = [];
-  let tokenIndex = 0;
-  let command = null;
-  let x = 0;
-  let y = 0;
-
-  const read = () => {
-    assert.ok(tokenIndex < tokens.length, 'ト音記号パスの数値が途中で終わらない');
-    const value = Number(tokens[tokenIndex++]);
-    assert.ok(Number.isFinite(value), 'ト音記号パスの座標は有限値');
-    return value;
-  };
-
-  while (tokenIndex < tokens.length) {
-    if (/^[A-Za-z]$/.test(tokens[tokenIndex])) command = tokens[tokenIndex++];
-
-    if (command === 'M') {
-      x = read();
-      y = read();
-      points.push({ x, y });
-      command = null;
-      continue;
-    }
-
-    assert.equal(command, 'C', 'ト音記号の骨格はMとCだけで構成する');
-    const x0 = x;
-    const y0 = y;
-    const x1 = read();
-    const y1 = read();
-    const x2 = read();
-    const y2 = read();
-    const x3 = read();
-    const y3 = read();
-    for (let step = 1; step <= stepsPerCurve; step++) {
-      const t = step / stepsPerCurve;
-      points.push({
-        x: cubicAt(x0, x1, x2, x3, t),
-        y: cubicAt(y0, y1, y2, y3, t),
-      });
-    }
-    x = x3;
-    y = y3;
-    command = null;
-  }
-
-  return points;
-}
-
-function segmentIntersection(a, b, c, d) {
-  const abX = b.x - a.x;
-  const abY = b.y - a.y;
-  const cdX = d.x - c.x;
-  const cdY = d.y - c.y;
-  const denominator = abX * cdY - abY * cdX;
-  if (Math.abs(denominator) < 1e-10) return null;
-
-  const acX = c.x - a.x;
-  const acY = c.y - a.y;
-  const alongAB = (acX * cdY - acY * cdX) / denominator;
-  const alongCD = (acX * abY - acY * abX) / denominator;
-  const epsilon = 1e-7;
-  if (alongAB < -epsilon || alongAB > 1 + epsilon
-    || alongCD < -epsilon || alongCD > 1 + epsilon) return null;
-
-  return {
-    x: a.x + alongAB * abX,
-    y: a.y + alongAB * abY,
-  };
-}
-
-function selfIntersections(points) {
-  const intersections = [];
-  for (let first = 0; first < points.length - 1; first++) {
-    for (let second = first + 2; second < points.length - 1; second++) {
-      const hit = segmentIntersection(
-        points[first],
-        points[first + 1],
-        points[second],
-        points[second + 1],
-      );
-      if (!hit) continue;
-      if (!intersections.some(point => Math.hypot(point.x - hit.x, point.y - hit.y) < 0.025)) {
-        intersections.push(hit);
-      }
-    }
-  }
-  return intersections;
-}
-
-function widestHorizontalSlice(points, slices = 800) {
-  const ys = points.map(point => point.y);
-  const top = Math.min(...ys);
-  const bottom = Math.max(...ys);
-  let widest = { width: -Infinity, y: NaN };
-
-  for (let slice = 1; slice < slices; slice++) {
-    const y = top + (bottom - top) * slice / slices;
-    const crossings = [];
-    for (let index = 0; index < points.length - 1; index++) {
-      const start = points[index];
-      const end = points[index + 1];
-      // 半開区間にして、ベジェ分割点を二重に数えない。
-      if (!((start.y <= y && end.y > y) || (end.y <= y && start.y > y))) continue;
-      const t = (y - start.y) / (end.y - start.y);
-      crossings.push(start.x + (end.x - start.x) * t);
-    }
-    if (crossings.length < 2) continue;
-    const width = Math.max(...crossings) - Math.min(...crossings);
-    if (width > widest.width) widest = { width, y };
-  }
-
-  return widest;
-}
-
 function transformOf(attrs) {
   const match = attrs.transform?.match(
     /^translate\(([-+.\deE]+)[ ,]+([-+.\deE]+)\)\s+scale\(([-+.\deE]+)\)$/,
@@ -317,24 +201,6 @@ function pathBox(attrs) {
     top: transform.y + local.top * transform.scale - strokeHalf,
     right: transform.x + local.right * transform.scale + strokeHalf,
     bottom: transform.y + local.bottom * transform.scale + strokeHalf,
-  };
-}
-
-function ellipseBox(attrs) {
-  const cx = numeric(attrs, 'cx');
-  const cy = numeric(attrs, 'cy');
-  const rx = numeric(attrs, 'rx');
-  const ry = numeric(attrs, 'ry');
-  const match = attrs.transform?.match(/^rotate\(([-+.\deE]+)\s/);
-  assert.ok(match, '符頭に回転角がある');
-  const angle = Number(match[1]) * Math.PI / 180;
-  const xRadius = Math.hypot(rx * Math.cos(angle), ry * Math.sin(angle));
-  const yRadius = Math.hypot(rx * Math.sin(angle), ry * Math.cos(angle));
-  return {
-    left: cx - xRadius,
-    top: cy - yRadius,
-    right: cx + xRadius,
-    bottom: cy + yRadius,
   };
 }
 
@@ -406,7 +272,7 @@ function hintBox({ attrs, text }) {
 
 function engravingGeometry(svg) {
   const heads = new Map(elements(svg, 'notehead')
-    .map(({ attrs }) => [attrs['data-note-index'], ellipseBox(attrs)]));
+    .map(({ attrs }) => [attrs['data-note-index'], pathBox(attrs)]));
   const stems = new Map(elements(svg, 'stem')
     .map(({ attrs }) => [attrs['data-note-index'], lineBox(attrs)]));
   const notes = elements(svg, 'note').map(({ attrs }) => {
@@ -466,6 +332,106 @@ function viewBoxOf(svg) {
   return { left: x, top: y, right: x + width, bottom: y + height };
 }
 
+function assertMinimum(actual, expected, label) {
+  // SVG属性は小数第3位へ丸めるため、比較側だけ0.003pxの丸め幅を持たせる。
+  assert.ok(actual + 0.003 >= expected, `${label}: ${actual} >= ${expected}`);
+}
+
+function notePartsByIndex(svg, noteIndex) {
+  const roles = ['notehead', 'stem', 'note-accidental'];
+  return roles.flatMap((role) => elements(svg, role)
+    .filter(({ attrs }) => attrs['data-note-index'] === String(noteIndex)
+      || attrs['data-index'] === String(noteIndex))
+    .map(({ attrs }) => (role === 'stem' ? lineBox(attrs) : pathBox(attrs))));
+}
+
+function assertHorizontalContract(svg, key, label) {
+  const root = rootAttributes(svg);
+  const space = numeric(root, 'data-staff-space');
+  const viewBox = viewBoxOf(svg);
+  const headBoxes = elements(svg, 'notehead').map(({ attrs }) => pathBox(attrs));
+  assert.equal(headBoxes.length, 4, `${label}の符頭は4つ`);
+
+  const centers = headBoxes.map((box) => (box.left + box.right) / 2);
+  const centerGaps = centers.slice(1).map((center, index) => center - centers[index]);
+  for (const gap of centerGaps) {
+    assertMinimum(gap, space * 3, `${label}の符頭中心間は3.0線間以上`);
+  }
+  const smallestGap = Math.min(...centerGaps);
+  const largestGap = Math.max(...centerGaps);
+  assert.ok(
+    largestGap - smallestGap <= smallestGap * 0.05 + 0.003,
+    `${label}の4音は5%以内の均等間隔`,
+  );
+
+  for (let index = 1; index < headBoxes.length; index += 1) {
+    assertMinimum(
+      headBoxes[index].left - headBoxes[index - 1].right,
+      space * 0.5,
+      `${label}の隣接符頭の外接矩形間は0.5線間以上`,
+    );
+  }
+
+  const lastParts = notePartsByIndex(svg, 3);
+  assert.ok(lastParts.length >= 2, `${label}の最後の音に符頭と符幹がある`);
+  for (const part of lastParts) {
+    assert.ok(part.right <= viewBox.right + 0.003, `${label}の最後の音が右端から出ない`);
+  }
+  const lastDrawingRight = Math.max(...lastParts.map((part) => part.right));
+  assertMinimum(
+    viewBox.right - lastDrawingRight,
+    space * 1.2,
+    `${label}の最後の音の右余白は1.2線間以上`,
+  );
+
+  const clefBox = pathBox(elements(svg, 'clef')[0].attrs);
+  const firstParts = notePartsByIndex(svg, 0);
+  const firstDrawingLeft = Math.min(...firstParts.map((part) => part.left));
+  const signatures = elements(svg, 'key-signature').map(({ attrs }) => pathBox(attrs));
+  if (signatures.length) {
+    assertMinimum(
+      signatures[0].left - clefBox.right,
+      space * 0.6,
+      `${label}のト音記号と最初の♯の空きは0.6線間以上`,
+    );
+    for (let index = 1; index < signatures.length; index += 1) {
+      assertMinimum(
+        signatures[index].left - signatures[index - 1].right,
+        space * 0.15,
+        `${label}の調号同士の空きは0.15線間以上`,
+      );
+    }
+    assertMinimum(
+      firstDrawingLeft - signatures.at(-1).right,
+      space * 0.8,
+      `${label}の最後の♯と最初の音の空きは0.8線間以上`,
+    );
+  } else {
+    assert.equal(key, 'C', `${label}で調号なしはC長調`);
+    assertMinimum(
+      firstDrawingLeft - clefBox.right,
+      space * 0.6,
+      `${label}のト音記号と最初の音の空きは0.6線間以上`,
+    );
+  }
+}
+
+function midisForLevel(level, key) {
+  const config = LEVELS[level];
+  const byId = new Map(STRINGS.map((string) => [string.id, string]));
+  return [...new Set(config.strings.flatMap((stringId) => (
+    fingering(byId.get(stringId).midi, key)
+      .filter(({ finger }) => finger <= config.maxFinger)
+      .map(({ midi }) => midi)
+  )))].sort((left, right) => left - right);
+}
+
+function fourNoteRotations(midis) {
+  return midis.map((_, start) => (
+    Array.from({ length: 4 }, (unused, offset) => midis[(start + offset) % midis.length])
+  ));
+}
+
 function assertWellFormed(svg) {
   const stack = [];
   const tagPattern = /<(\/)?([A-Za-z][\w:-]*)(?:\s[^<>]*?)?(\/?)>/g;
@@ -496,6 +462,23 @@ test('五線は5本で、線間と線幅が五線間隔から決まる', () => {
   }
 });
 
+test('五線間隔は横の必要量needと実幅だけから決まる', () => {
+  for (const width of [375, 390, 430]) {
+    for (const key of ['C', 'G', 'D', 'A']) {
+      const svg = renderStaff({
+        key,
+        notes: makeNotes([55, 61, 73, 83], ['current', 'todo', 'todo', 'todo']),
+        width,
+        theme: 'light',
+      });
+      const root = rootAttributes(svg);
+      const need = numeric(root, 'data-layout-need');
+      const space = numeric(root, 'data-staff-space');
+      approximately(space, width / need, 0.002);
+    }
+  }
+});
+
 test('音符4つの符頭はdiatonic 1段につき五線間隔の半分だけ上がる', () => {
   const midis = [64, 65, 67, 69]; // E4, F4, G4, A4
   const svg = renderStaff({ key: 'C', notes: makeNotes(midis), width: WIDTH, theme: 'light' });
@@ -507,29 +490,43 @@ test('音符4つの符頭はdiatonic 1段につき五線間隔の半分だけ上
   assert.equal(heads.length, 4);
   heads.forEach(({ attrs }, index) => {
     const diatonic = midiToStaff(midis[index], 'C').diatonic;
-    approximately(numeric(attrs, 'cy'), staffBottom - diatonic * space / 2);
+    approximately(numeric(attrs, 'data-y'), staffBottom - diatonic * space / 2);
   });
 
   for (let index = 1; index < heads.length; index++) {
     approximately(
-      numeric(heads[index - 1].attrs, 'cy') - numeric(heads[index].attrs, 'cy'),
+      numeric(heads[index - 1].attrs, 'data-y') - numeric(heads[index].attrs, 'data-y'),
       space / 2,
     );
   }
 });
 
-test('符頭は傾いた楕円で、符幹長は五線間隔のおよそ3.6倍', () => {
-  const svg = renderStaff({ key: 'C', notes: makeNotes([69]), width: WIDTH, theme: 'light' });
+test('Bravuraの符頭は規定寸法で、符幹が右上または左下の端へ付く', () => {
+  const svg = renderStaff({ key: 'C', notes: makeNotes([69, 71]), width: WIDTH, theme: 'light' });
   const space = numeric(rootAttributes(svg), 'data-staff-space');
-  const head = elements(svg, 'notehead')[0].attrs;
-  const stem = elements(svg, 'stem')[0].attrs;
-  const rx = numeric(head, 'rx');
-  const ry = numeric(head, 'ry');
-  const stemLength = Math.abs(numeric(stem, 'data-y-end') - numeric(stem, 'data-y-start'));
+  const heads = elements(svg, 'notehead');
+  const stems = elements(svg, 'stem');
 
-  assert.ok(rx > ry, '符頭は真円ではない');
-  assert.match(head.transform, /^rotate\(-20\s/);
-  approximately(stemLength / space, 3.6);
+  heads.forEach(({ attrs }, index) => {
+    const box = pathBox(attrs);
+    const width = (box.right - box.left) / space;
+    const height = (box.bottom - box.top) / space;
+    assert.ok(width >= 1 && width <= 1.4, '符頭幅は1.0〜1.4線間');
+    assert.ok(height >= 0.85 && height <= 1.15, '符頭高は0.85〜1.15線間');
+
+    const stem = stems[index].attrs;
+    const stemValues = (stem.d.match(/[-+]?(?:\d+(?:\.\d*)?|\.\d+)/g) || []).map(Number);
+    const stemX = stemValues[0];
+    const centerY = numeric(attrs, 'data-y');
+    approximately(Math.abs(numeric(stem, 'data-y-end') - centerY) / space, 3.5);
+    if (stem['data-direction'] === 'up') {
+      approximately(stemX, box.right);
+      approximately(numeric(stem, 'data-y-start'), centerY - space * 0.168);
+    } else {
+      approximately(stemX, box.left);
+      approximately(numeric(stem, 'data-y-start'), centerY + space * 0.168);
+    }
+  });
 });
 
 test('符幹はB4より下で上向き、B4以上で下向きになる', () => {
@@ -646,11 +643,13 @@ test('iPhone 3幅で描画要素がviewBox内に収まり、意図しない外�
               const note = left.kind === 'note' ? left : right;
               const ledger = left.kind === 'ledger' ? left : right;
               if (note.diatonic !== ledger.diatonic) {
-                // 符幹は自音の加線を横切るため、線間の音では符頭だけを独立に検査する。
-                assert.equal(
-                  boxesOverlap(note.headBox, ledger),
-                  false,
-                  `${width}px・${key}で${note.label}の符頭と${ledger.label}が重ならない`,
+                // Bravura符頭はちょうど1線間高なので、線間音では外接矩形の端と隣の加線中心が接する。
+                // 加線の半幅を超えて食い込んでいないことを検査し、輪郭を縮める誤差調整を避ける。
+                const overlap = Math.min(note.headBox.bottom, ledger.bottom)
+                  - Math.max(note.headBox.top, ledger.top);
+                assert.ok(
+                  overlap <= (ledger.bottom - ledger.top) / 2 + 0.003,
+                  `${width}px・${key}で${note.label}の符頭が${ledger.label}へ食い込まない`,
                 );
               }
               // 音が加線上にある場合は、加線が符頭を横切ること自体が記譜上必要になる。
@@ -668,26 +667,50 @@ test('iPhone 3幅で描画要素がviewBox内に収まり、意図しない外�
   }
 });
 
-test('4音の横間隔は375/390/430pxすべてで均等かつ十分に離れる', () => {
+test('全レベル・全調で4音の横配置契約を3つのiPhone幅で守る', () => {
+  let accidentalCases = 0;
+  let plainCases = 0;
+
   for (const width of [375, 390, 430]) {
     for (const key of ['C', 'G', 'D', 'A']) {
+      for (const level of Object.keys(LEVELS).map(Number)) {
+        for (const midis of fourNoteRotations(midisForLevel(level, key))) {
+          const notes = makeNotes(midis, ['current', 'todo', 'todo', 'todo']);
+          const svg = renderStaff({ key, notes, width, theme: 'light' });
+          const accidentalCount = elements(svg, 'note-accidental').length;
+          if (accidentalCount) accidentalCases += 1;
+          else plainCases += 1;
+          assertHorizontalContract(svg, key, `${width}px・${key}・level ${level}・${midis}`);
+        }
+      }
+    }
+  }
+
+  assert.ok(accidentalCases > 0, '全レベル走査に臨時記号ありを含む');
+  assert.ok(plainCases > 0, '全レベル走査に臨時記号なしを含む');
+});
+
+test('最後の音に臨時記号がある場合も横配置契約を守る', () => {
+  const cases = [
+    { key: 'A', midis: [62, 64, 66, 55] }, // 開放ソ線を戻す♮が最後に付く。
+    { key: 'C', midis: [69, 71, 72, 73] }, // C♯5が最後に付く。
+  ];
+
+  for (const width of [375, 390, 430]) {
+    for (const { key, midis } of cases) {
       const svg = renderStaff({
         key,
-        notes: makeNotes([55, 61, 73, 83]),
+        notes: makeNotes(midis, ['current', 'todo', 'todo', 'todo']),
         width,
         theme: 'light',
       });
-      const space = numeric(rootAttributes(svg), 'data-staff-space');
-      const xs = elements(svg, 'note').map(({ attrs }) => numeric(attrs, 'data-x'));
-      assert.equal(xs.length, 4);
-      const gaps = xs.slice(1).map((x, index) => x - xs[index]);
-      for (const gap of gaps) approximately(gap, gaps[0], 0.003);
-      assert.ok(gaps[0] >= space * 5, `${width}px・${key}で隣の音と5線間以上離れる`);
+      assert.equal(elements(svg, 'note-accidental').at(-1).attrs['data-index'], '3');
+      assertHorizontalContract(svg, key, `${width}px・${key}・最後に臨時記号`);
     }
   }
 });
 
-test('375px実幅で回転後の符頭高が8px以上ある', () => {
+test('375px実幅でBravura符頭の高さが8px以上ある', () => {
   const width = 375;
   const svg = renderStaff({
     key: 'A',
@@ -699,7 +722,7 @@ test('375px実幅で回転後の符頭高が8px以上ある', () => {
   const cssScale = width / (viewBox.right - viewBox.left);
 
   for (const { attrs } of elements(svg, 'notehead')) {
-    const box = ellipseBox(attrs);
+    const box = pathBox(attrs);
     assert.ok((box.bottom - box.top) * cssScale >= 8, '符頭高が8px以上');
   }
 });
@@ -711,7 +734,7 @@ test('臨時記号と符頭の間に375pxでも五線間隔の1/4以上の隙間
       const accidental = elements(svg, 'note-accidental')[0];
       if (!accidental) continue;
       const accidentalBounds = pathBox(accidental.attrs);
-      const headBounds = ellipseBox(elements(svg, 'notehead')[0].attrs);
+      const headBounds = pathBox(elements(svg, 'notehead')[0].attrs);
       const space = numeric(rootAttributes(svg), 'data-staff-space');
       assert.ok(
         headBounds.left - accidentalBounds.right >= space * 0.25,
@@ -721,12 +744,26 @@ test('臨時記号と符頭の間に375pxでも五線間隔の1/4以上の隙間
   }
 });
 
-test('A長調の3つの調号は375pxでも1px以上離れる', () => {
+test('A長調の3つの♯は指定したdiatonic位置が中心で、互いに重ならない', () => {
   const svg = renderStaff({ key: 'A', notes: makeNotes([69, 71, 73, 74]), width: 375, theme: 'light' });
-  const boxes = elements(svg, 'key-signature').map(({ attrs }) => pathBox(attrs));
+  const root = rootAttributes(svg);
+  const space = numeric(root, 'data-staff-space');
+  const staffBottom = numeric(root, 'data-staff-bottom');
+  const signatures = elements(svg, 'key-signature');
+  const boxes = signatures.map(({ attrs }) => pathBox(attrs));
   assert.equal(boxes.length, 3);
-  for (let index = 1; index < boxes.length; index++) {
-    assert.ok(boxes[index].left - boxes[index - 1].right >= 1, '調号の字間が1px以上');
+
+  signatures.forEach(({ attrs }, index) => {
+    const expectedY = staffBottom - Number(attrs['data-diatonic']) * space / 2;
+    const boxCenterY = (boxes[index].top + boxes[index].bottom) / 2;
+    approximately(numeric(attrs, 'data-y'), expectedY);
+    approximately(boxCenterY, expectedY, space * 0.02);
+  });
+
+  for (let left = 0; left < boxes.length; left++) {
+    for (let right = left + 1; right < boxes.length; right++) {
+      assert.equal(boxesOverlap(boxes[left], boxes[right]), false, '調号の♯が互いに重ならない');
+    }
   }
 });
 
@@ -760,7 +797,7 @@ test('4状態は色または濃さが異なり、currentだけ縦長の帯を持
   );
 });
 
-test('ト音記号はG4を原点とする一本の丸線で描く', () => {
+test('ト音記号はG4を原点とするBravuraの輪郭をfillで描く', () => {
   const svg = renderStaff({ key: 'C', notes: makeNotes([69]), width: WIDTH, theme: 'light' });
   const root = rootAttributes(svg);
   const clef = elements(svg, 'clef')[0].attrs;
@@ -772,45 +809,21 @@ test('ト音記号はG4を原点とする一本の丸線で描く', () => {
   approximately(gLine, bottom - space);
   approximately(transform.y, gLine);
   approximately(transform.scale / space, 1);
-  assert.equal(clef.fill, 'none');
-  assert.equal(clef['stroke-linecap'], 'round');
-  assert.equal(clef['stroke-linejoin'], 'round');
-
-  const renderedStroke = numeric(clef, 'stroke-width') * transform.scale;
-  assert.ok(renderedStroke / space >= 0.40, '線幅は五線間隔の0.40倍以上');
-  assert.ok(renderedStroke / space <= 0.45, '線幅は五線間隔の0.45倍以下');
-  assert.equal((CLEF_PATH.match(/\bM\b/g) || []).length, 1, '骨格は一筆でつながる');
+  assert.equal(clef.fill, '#252A2E');
+  assert.equal(clef.stroke, undefined);
+  assert.equal((CLEF_PATH.match(/M/g) || []).length, 4, 'Bravuraの4輪郭を保つ');
+  assert.equal((CLEF_PATH.match(/Z/g) || []).length, 4, '全輪郭が閉じている');
 });
 
-test('ト音記号の上下端・幅・渦中心は五線間隔座標の条件を満たす', () => {
-  const points = sampleCubicPath(CLEF_PATH);
+test('ト音記号の渦中心と上下端はG4基準の条件を満たす', () => {
   const geometry = pathGeometry(CLEF_PATH);
-  const width = geometry.bounds.right - geometry.bounds.left;
-  const height = geometry.bounds.bottom - geometry.bounds.top;
-  // SVGは下向きが正なので、依頼の「上向きを正」とする音楽座標へ符号を戻す。
-  const lowestY = -geometry.bounds.bottom;
-  const highestY = -geometry.bounds.top;
-  const widest = widestHorizontalSlice(points);
-  const widestY = -widest.y;
+  // 2番目の閉輪郭がG4線を囲む渦の内側であり、その箱の中心を機械的な基準にする。
+  const gCounter = geometry.subpathBounds[1];
+  const gCounterCenterY = (gCounter.top + gCounter.bottom) / 2;
 
-  assert.ok(Math.abs(geometry.end.y) <= 0.15, '渦の中心はG4線の±0.15線間');
-  assert.ok(-1 - lowestY >= 2, '最下点は最下線より2線間以上下');
-  assert.ok(highestY - 3 >= 1.2, '最上点は最上線より1.2線間以上上');
-  assert.ok(width / height <= 0.45, '最大幅は高さの0.45倍以下');
-  assert.ok(widestY < 0, '最も横に開く場所はG4線より下');
-
-  const upperCrook = points.filter(point => Math.abs(point.y + 3) <= 0.08);
-  assert.ok(Math.min(...upperCrook.map(point => point.x)) <= -0.9,
-    '上の張り出しはF5付近で左へ大きく回り込む');
-});
-
-test('ト音記号は縦の流れと下降弧がB4付近で自己交差する', () => {
-  const intersections = selfIntersections(sampleCubicPath(CLEF_PATH));
-  assert.ok(intersections.length >= 1, '自己交差が1回以上ある');
-  assert.ok(
-    intersections.some(point => Math.hypot(point.x - 0.10, point.y + 1.00) <= 0.04),
-    '縦の流れと上からの下降弧がB4線付近で交差する',
-  );
+  assert.ok(Math.abs(gCounterCenterY) <= 0.2, '渦の中心はG4線の±0.2線間');
+  assert.ok(geometry.bounds.bottom - 1 >= 1.5, '下端は最下線より1.5線間以上下');
+  assert.ok(-3 - geometry.bounds.top >= 1, '上端は最上線より1線間以上上');
 });
 
 test('SVGは外部参照とscriptを含まず、タグの対応が取れている', () => {
@@ -828,6 +841,8 @@ test('SVGは外部参照とscriptを含まず、タグの対応が取れてい�
   assert.doesNotMatch(svg, /<script\b/i);
   assert.doesNotMatch(svg, /https?:\/\//i);
   assert.doesNotMatch(svg, /\u{1D11E}/u);
+  assert.doesNotMatch(svg, /height="auto"/);
   assert.match(svg, /^<svg\b[^>]*width="100%"/);
+  assert.equal(rootAttributes(svg).height, undefined);
   assertWellFormed(svg);
 });

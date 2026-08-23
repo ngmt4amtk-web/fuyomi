@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import {RESCUE_MAX_CENTS, TOL, createHolder, detect, judgeNote, median} from '../js/pitch.js';
+import {RESCUE_MAX_CENTS, TOL, createHolder, createMic, detect, judgeNote, median} from '../js/pitch.js';
+import {STRINGS, fingering} from '../js/theory.js';
 
 const SAMPLE_RATE = 48000;
 const A4 = 442;
@@ -12,6 +13,17 @@ const LEVEL_ONE_CANDIDATES = [
   {midi:73, stringId:'A', finger:2},
   {midi:74, stringId:'A', finger:3}
 ];
+const ALL_FIRST_POSITION_CANDIDATES = (() => {
+  const byMidi = new Map();
+  for(const string of STRINGS){
+    for(const position of fingering(string.midi, 'A')){
+      const candidate = {midi:position.midi, stringId:string.id, finger:position.finger};
+      const current = byMidi.get(candidate.midi);
+      if(!current || candidate.finger < current.finger) byMidi.set(candidate.midi, candidate);
+    }
+  }
+  return [...byMidi.values()];
+})();
 
 const frequencyForMidi = midi => A4 * Math.pow(2, (midi - 69) / 12);
 const centsBetween = (actual, expected) => 1200 * Math.log2(actual / expected);
@@ -53,6 +65,28 @@ function whiteNoise(seed){
     out[i] = (((state >>> 8) / 0x1000000) * 2 - 1) * 0.3;
   }
   return out;
+}
+
+async function withBrowserAudio({getUserMedia, AudioContext}, callback){
+  const navigatorDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+  const windowDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'window');
+  Object.defineProperty(globalThis, 'navigator', {
+    configurable:true,
+    value:{mediaDevices:{getUserMedia}}
+  });
+  Object.defineProperty(globalThis, 'window', {
+    configurable:true,
+    value:{AudioContext}
+  });
+
+  try {
+    await callback();
+  } finally {
+    if(navigatorDescriptor) Object.defineProperty(globalThis, 'navigator', navigatorDescriptor);
+    else delete globalThis.navigator;
+    if(windowDescriptor) Object.defineProperty(globalThis, 'window', windowDescriptor);
+    else delete globalThis.window;
+  }
 }
 
 test('TOL はゆびいろで確定した3段の値を保つ', () => {
@@ -183,29 +217,92 @@ test('createHolder は220msを超える無音と muteUntil で保持を捨てる
   assert.equal(holder.progress(), 0);
 });
 
-test('judgeNote はレベル1の最低候補より1オクターブ下を正解にしない', () => {
+test('createHolder は reset 後、無音を観測するまで持続音を次の判定へ持ち越さない', () => {
+  const holder = createHolder(TOL.loose);
+  const voiced = {f:442, conf:1, rms:0.2};
+  const silent = {f:-1, conf:0, rms:0};
+
+  let first = null;
+  for(const now of [0, 50, 100, 150, 200, 250]) first ||= holder.feed(now, voiced);
+  assert.ok(first, '1回目の発音が保持時間を満たしても値が返らなかった');
+
+  holder.reset();
+  for(const now of [300, 350, 400, 450, 500, 550, 600]){
+    assert.equal(holder.feed(now, voiced), null, '同じ持続音が reset 後に数え直された');
+  }
+
+  holder.feed(650, silent);
+  let second = null;
+  for(const now of [700, 750, 800, 850, 900, 950]) second ||= holder.feed(now, voiced);
+  assert.ok(second, '無音後の新しい発音を数え始めなかった');
+});
+
+test('createMic はストリーム取得後の初期化失敗を後始末して再スローする', async t => {
+  await t.test('AudioContext の生成失敗では取得済みトラックを止める', async () => {
+    let stoppedTracks = 0;
+    const stream = {getTracks:() => [{stop(){ stoppedTracks += 1; }}]};
+    class BrokenAudioContext {
+      constructor(){ throw new Error('AudioContext constructor failed'); }
+    }
+
+    await withBrowserAudio({
+      getUserMedia:async () => stream,
+      AudioContext:BrokenAudioContext
+    }, async () => {
+      await assert.rejects(createMic(), /constructor failed/);
+    });
+    assert.equal(stoppedTracks, 1);
+  });
+
+  await t.test('resume の失敗では取得済みトラックを止めて Context を閉じる', async () => {
+    let stoppedTracks = 0;
+    let closedContexts = 0;
+    const stream = {getTracks:() => [{stop(){ stoppedTracks += 1; }}]};
+    class ResumeFailureAudioContext {
+      constructor(){ this.state = 'suspended'; }
+      async resume(){ throw new Error('resume failed'); }
+      async close(){ this.state = 'closed'; closedContexts += 1; }
+    }
+
+    await withBrowserAudio({
+      getUserMedia:async () => stream,
+      AudioContext:ResumeFailureAudioContext
+    }, async () => {
+      await assert.rejects(createMic(), /resume failed/);
+    });
+    assert.equal(stoppedTracks, 1);
+    assert.equal(closedContexts, 1);
+  });
+});
+
+test('judgeNote は目標A4の1オクターブ下と上を第3段で救済する', () => {
+  for(const midi of [57, 81]){
+    const result = judgeNote({
+      freq:frequencyForMidi(midi),
+      targetMidi:69,
+      candidates:LEVEL_ONE_CANDIDATES,
+      cfg:TOL.loose,
+      a4:A4
+    });
+
+    assert.equal(result.ok, true, `MIDI ${midi} を救済しなかった`);
+    assert.equal(result.oct, true, `MIDI ${midi} が第3段を通らなかった`);
+    assert.ok(Math.abs(result.cents) < 1e-9);
+  }
+});
+
+test('judgeNote はD5の出題で正確なE5を別音として拒否する', () => {
   const result = judgeNote({
-    freq:frequencyForMidi(57),
-    targetMidi:69,
-    candidates:LEVEL_ONE_CANDIDATES,
+    freq:frequencyForMidi(76),
+    targetMidi:74,
+    candidates:ALL_FIRST_POSITION_CANDIDATES,
     cfg:TOL.loose,
     a4:A4
   });
 
   assert.equal(result.ok, false);
-});
-
-test('judgeNote は目標から240セントなら最近傍で救済する', () => {
-  const result = judgeNote({
-    freq:frequencyForMidi(74) * Math.pow(2, 240 / 1200),
-    targetMidi:74,
-    candidates:LEVEL_ONE_CANDIDATES,
-    cfg:TOL.loose,
-    a4:A4
-  });
-
-  assert.equal(result.ok, true);
-  assert.ok(Math.abs(result.cents - 240) < 1e-9);
+  assert.deepEqual(result.heard, {midi:76, stringId:'E', finger:0});
+  assert.ok(Math.abs(result.cents) < 1e-9);
 });
 
 test('judgeNote は目標から260セントなら最近傍でも救済しない', () => {
@@ -269,10 +366,17 @@ test('judgeNote は許容幅・最近傍・オクターブの3段で救済し、
     assert.ok(Math.abs(result.cents - 95) < 1e-9);
   });
 
-  await t.test('1オクターブ下は倍音分岐でも上限外として救済しない', () => {
+  await t.test('1オクターブ下は畳んだ距離で第3段が救済する', () => {
     const result = judge(frequencyForMidi(57));
-    assert.equal(result.ok, false);
-    assert.equal(result.heard, candidates.find(candidate => candidate.midi === 69));
+    assert.equal(result.ok, true);
+    assert.equal(result.oct, true);
+    assert.ok(Math.abs(result.cents) < 1e-9);
+  });
+
+  await t.test('1オクターブ上も畳んだ距離で第3段が救済する', () => {
+    const result = judge(frequencyForMidi(81));
+    assert.equal(result.ok, true);
+    assert.equal(result.oct, true);
     assert.ok(Math.abs(result.cents) < 1e-9);
   });
 

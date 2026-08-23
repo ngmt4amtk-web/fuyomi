@@ -65,34 +65,61 @@ export async function createMic(){
     noiseSuppression:false,
     channelCount:1
   }});
-  const AC = window.AudioContext || window.webkitAudioContext;
-  const ctx = new AC();
-  if(ctx.state === 'suspended') await ctx.resume();
-
-  const src = ctx.createMediaStreamSource(stream);
-  const hp = ctx.createBiquadFilter();
-  hp.type = 'highpass';
-  hp.frequency.value = 90;
-  hp.Q.value = 0.707;
-  const analyser = ctx.createAnalyser();
-  analyser.fftSize = 4096;
-  analyser.smoothingTimeConstant = 0;
-  src.connect(hp);
-  hp.connect(analyser);
-
-  const tdBuf = new Float32Array(analyser.fftSize);
-  return {
-    read(){
-      analyser.getFloatTimeDomainData(tdBuf);
-      return tdBuf.subarray(tdBuf.length - 2048);
-    },
-    sampleRate:ctx.sampleRate,
-    close(){
-      stream.getTracks().forEach(t => t.stop());
-      ctx.close().catch(() => {});
-    },
-    ctx
+  let ctx = null;
+  const stopTracks = () => {
+    stream.getTracks().forEach(track => {
+      try {
+        track.stop();
+      } catch {
+        // 1本の停止失敗で、残りの取得済みトラックの解放を止めない。
+      }
+    });
   };
+
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    ctx = new AC();
+    if(ctx.state === 'suspended') await ctx.resume();
+
+    const src = ctx.createMediaStreamSource(stream);
+    const hp = ctx.createBiquadFilter();
+    hp.type = 'highpass';
+    hp.frequency.value = 90;
+    hp.Q.value = 0.707;
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 4096;
+    analyser.smoothingTimeConstant = 0;
+    src.connect(hp);
+    hp.connect(analyser);
+
+    const tdBuf = new Float32Array(analyser.fftSize);
+    return {
+      read(){
+        analyser.getFloatTimeDomainData(tdBuf);
+        return tdBuf.subarray(tdBuf.length - 2048);
+      },
+      sampleRate:ctx.sampleRate,
+      close(){
+        stopTracks();
+        try {
+          ctx.close().catch(() => {});
+        } catch {
+          // close が同期例外を投げても、トラックはすでに停止している。
+        }
+      },
+      ctx
+    };
+  } catch(error) {
+    stopTracks();
+    if(ctx && ctx.state !== 'closed'){
+      try {
+        await ctx.close();
+      } catch {
+        // 初期化時の元の失敗を、後始末側の失敗で上書きしない。
+      }
+    }
+    throw error;
+  }
 }
 
 export function createHolder(cfg){
@@ -100,6 +127,7 @@ export function createHolder(cfg){
   let lastVoiced = 0;
   let held = 0;
   let mutedUntil = 0;
+  let armed = true;
 
   const clear = () => {
     hold = [];
@@ -112,9 +140,13 @@ export function createHolder(cfg){
 
       const voiced = det.f > 0 && det.conf > cfg.conf;
       if(!voiced){
+        // reset は判定直後の明示的な境界なので、無声を1フレーム観測できれば再武装する。
+        // 通常の途切れ判定と同じ220msを課すと、弓を返した次の発音に不要な待ち時間が乗る。
+        if(!armed) armed = true;
         if(hold.length && now - lastVoiced > 220) clear();
         return null;
       }
+      if(!armed) return null;
 
       lastVoiced = now;
       hold.push({t:now, f:det.f});
@@ -147,12 +179,15 @@ export function createHolder(cfg){
 
     reset(){
       clear();
+      // 同じ持続音を新しい試行として数え直さないため、次の無声まで受付を閉じる。
+      armed = false;
     },
 
     muteUntil(t){
       mutedUntil = t;
       // おてほん前の音を残すと、解除直後に継続音として誤判定するため同時に捨てる。
       clear();
+      armed = false;
     }
   };
 }
@@ -168,14 +203,10 @@ export function judgeNote({freq, targetMidi, candidates, cfg, a4 = 442}){
   });
 
   const dist = (midi, allowOctave) => {
-    let best = centsFromMidi(freq, midi, a4);
-    if(allowOctave){
-      [-1, 1, 2].forEach(octave => {
-        const current = centsFromMidi(freq, midi + 12 * octave, a4);
-        if(Math.abs(current) < Math.abs(best)) best = current;
-      });
-    }
-    return best;
+    const raw = centsFromMidi(freq, midi, a4);
+    if(!allowOctave) return raw;
+    // 1200セント周期へ畳むことで、上下どちらのオクターブでも同じ基準で比較する。
+    return ((((raw + 600) % 1200) + 1200) % 1200) - 600;
   };
 
   const targetCents = centsFromMidi(freq, targetMidi, a4);
@@ -197,7 +228,13 @@ export function judgeNote({freq, targetMidi, candidates, cfg, a4 = 442}){
   });
   if(rescueAllowed && near.midi === targetMidi) return {ok:true, cents:targetCents};
 
-  // 3段目は、弱い基音の代わりに倍音を拾った場合だけ目標へ戻す。
+  // 3段目は、生の距離ではなくオクターブを畳んだ目標距離で倍音を救済する。
+  const octaveCents = dist(targetMidi, true);
+  if(Math.abs(octaveCents) <= cfg.tol){
+    return {ok:true, cents:octaveCents, oct:true};
+  }
+
+  // 外れた音の報告では、候補それぞれについてオクターブを畳んだ最近傍も求める。
   let nearHarmonic = cand[0], nearHarmonicCents = dist(cand[0].midi, true);
   cand.forEach(candidate => {
     const current = dist(candidate.midi, true);
@@ -206,10 +243,6 @@ export function judgeNote({freq, targetMidi, candidates, cfg, a4 = 442}){
       nearHarmonicCents = current;
     }
   });
-  if(rescueAllowed && nearHarmonic.midi === targetMidi && Math.abs(nearHarmonicCents) <= cfg.tol){
-    return {ok:true, cents:nearHarmonicCents, oct:true};
-  }
-
   // 倍音用の距離を優先すると、実際に鳴った近い音とは別の低い同名音を報告してしまう。
   if(Math.abs(nearCents) <= 250){
     return {ok:false, heard:near, cents:nearCents};
