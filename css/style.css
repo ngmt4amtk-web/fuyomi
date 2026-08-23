@@ -389,9 +389,9 @@ h2 {
 
 .practice-screen {
   position: relative;
-  display: flex;
+  display: grid;
   min-height: calc(100dvh - 50px - var(--safe-top) - var(--safe-bottom));
-  flex-direction: column;
+  grid-template-rows: auto minmax(0, 1fr) auto;
 }
 
 .practice-top,
@@ -431,11 +431,10 @@ h2 {
 }
 
 .practice-stage {
-  position: absolute;
-  top: 50%;
-  left: 0;
+  /* ヘッダーと操作群を除いた残り領域の中央へ置き、帯の有無でも上下の余白を揃える。 */
+  position: static;
+  align-self: center;
   width: 100%;
-  transform: translateY(-50%);
 }
 
 .staff-wrap {
@@ -534,7 +533,7 @@ h2 {
 }
 
 .practice-controls {
-  margin-top: auto;
+  margin-top: 0;
 }
 
 .practice-actions button {
@@ -744,21 +743,6 @@ noscript {
 @media (max-height: 700px) {
   .brand-header {
     padding-top: 18px;
-  }
-
-  .practice-screen {
-    display: grid;
-    grid-template-rows: auto minmax(0, 1fr) auto;
-  }
-
-  .practice-stage {
-    position: static;
-    align-self: center;
-    transform: none;
-  }
-
-  .practice-controls {
-    margin-top: 0;
   }
 }
 
