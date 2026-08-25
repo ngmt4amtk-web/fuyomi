@@ -22,57 +22,13 @@
       <p id="teacher-notice" class="notice" hidden>先生の指定で始めます</p>
 
       <form id="settings-form" class="settings-card">
-        <div class="field-grid">
+        <div class="settings-stack">
           <label class="field" for="level-select">
             <span>レベル</span>
             <select id="level-select" name="level"></select>
           </label>
 
-          <label class="field" for="key-select">
-            <span>調</span>
-            <select id="key-select" name="key">
-              <option value="C">ハ長調（C）</option>
-              <option value="G">ト長調（G）</option>
-              <option value="D">ニ長調（D）</option>
-              <option value="A">イ長調（A）</option>
-            </select>
-          </label>
-
-          <label class="field" for="count-select">
-            <span>フレーズ数</span>
-            <select id="count-select" name="count">
-              <option value="3">3フレーズ</option>
-              <option value="5">5フレーズ</option>
-              <option value="10">10フレーズ</option>
-            </select>
-          </label>
-
-          <label class="field" for="hint-select">
-            <span>ヒント</span>
-            <select id="hint-select" name="hint">
-              <option value="off">なし</option>
-              <option value="on">最初から出す</option>
-            </select>
-          </label>
-
-          <label class="field" for="sound-select">
-            <span>おてほんの音</span>
-            <select id="sound-select" name="sound">
-              <option value="on">オン</option>
-              <option value="off">オフ</option>
-            </select>
-          </label>
-
-          <label class="field" for="marks-select">
-            <span>弦の色と指番号</span>
-            <select id="marks-select" name="marks">
-              <option value="both">色と指番号を出す</option>
-              <option value="color">色だけ出す</option>
-              <option value="off">出さない</option>
-            </select>
-          </label>
-
-          <div class="field field-wide" id="strings-field" hidden>
+          <div class="field" id="strings-field" hidden>
             <span id="strings-label">使う弦</span>
             <div class="string-chips" role="group" aria-labelledby="strings-label">
               <button id="string-chip-G" class="string-chip" type="button" aria-pressed="false">ソ線</button>
@@ -82,6 +38,48 @@
             </div>
             <p id="strings-note" class="chip-note"></p>
           </div>
+
+          <div class="field">
+            <span id="key-label">調</span>
+            <select id="key-select" name="key" class="visually-hidden" tabindex="-1" aria-hidden="true">
+              <option value="C">ハ長調（C）</option>
+              <option value="G">ト長調（G）</option>
+              <option value="D">ニ長調（D）</option>
+              <option value="A">イ長調（A）</option>
+            </select>
+            <div class="chip-row chip-row-4" role="group" aria-labelledby="key-label">
+              <button id="key-chip-C" class="option-chip" type="button" aria-pressed="false">ハ長調</button>
+              <button id="key-chip-G" class="option-chip" type="button" aria-pressed="false">ト長調</button>
+              <button id="key-chip-D" class="option-chip" type="button" aria-pressed="false">ニ長調</button>
+              <button id="key-chip-A" class="option-chip" type="button" aria-pressed="false">イ長調</button>
+            </div>
+          </div>
+
+          <div class="field">
+            <span id="marks-label">弦の色と指番号</span>
+            <select id="marks-select" name="marks" class="visually-hidden" tabindex="-1" aria-hidden="true">
+              <option value="both">色と指番号を出す</option>
+              <option value="color">色だけ出す</option>
+              <option value="off">出さない</option>
+            </select>
+            <div class="chip-row" role="group" aria-labelledby="marks-label">
+              <button id="marks-chip-both" class="option-chip" type="button" aria-pressed="false">色と指番号</button>
+              <button id="marks-chip-color" class="option-chip" type="button" aria-pressed="false">色だけ</button>
+              <button id="marks-chip-off" class="option-chip" type="button" aria-pressed="false">なし</button>
+            </div>
+          </div>
+
+          <div class="field">
+            <span id="hint-label">ヒント</span>
+            <select id="hint-select" name="hint" class="visually-hidden" tabindex="-1" aria-hidden="true">
+              <option value="off">なし</option>
+              <option value="on">最初から出す</option>
+            </select>
+            <div class="chip-row" role="group" aria-labelledby="hint-label">
+              <button id="hint-chip-off" class="option-chip" type="button" aria-pressed="false">なし</button>
+              <button id="hint-chip-on" class="option-chip" type="button" aria-pressed="false">最初から出す</button>
+            </div>
+          </div>
         </div>
 
         <p id="level-description" class="field-note"></p>
@@ -89,6 +87,15 @@
         <details class="advanced-settings">
           <summary>詳細設定</summary>
           <div class="field-grid advanced-grid">
+            <label class="field" for="count-select">
+              <span>フレーズ数</span>
+              <select id="count-select" name="count">
+                <option value="3">3フレーズ</option>
+                <option value="5">5フレーズ</option>
+                <option value="10">10フレーズ</option>
+              </select>
+            </label>
+
             <label class="field" for="tolerance-select">
               <span>判定のゆるさ</span>
               <select id="tolerance-select" name="tolerance"></select>

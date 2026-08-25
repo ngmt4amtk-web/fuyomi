@@ -61,9 +61,8 @@ const STORAGE_KEY = 'fuyomi';
 const DEFAULTS = Object.freeze({
   level: 1,
   key: 'A',
-  count: 5,
+  count: 3,
   hint: 'off',
-  sound: 'on',
   marks: 'both',
   // 弦を選べるレベルで未選択のときは、レベルごとの既定（LEVELS.preset）へ落とす。
   strings: null,
@@ -91,7 +90,6 @@ const elements = {
   keySelect: byId('key-select'),
   countSelect: byId('count-select'),
   hintSelect: byId('hint-select'),
-  soundSelect: byId('sound-select'),
   toleranceSelect: byId('tolerance-select'),
   a4Select: byId('a4-select'),
   levelDescription: byId('level-description'),
@@ -133,6 +131,20 @@ const elements = {
 
 const stringChips = new Map(ALL_STRING_IDS.map((id) => [id, byId(`string-chip-${id}`)]));
 
+/*
+ * レベル以外は「開いて選ぶ」をやめ、選択肢を出したままワンタップで選べるようにする。
+ * select は値の置き場として残し、チップが押されたらその value を書き換える。
+ * 保存・URL上書き・講師リンクのdisabledは今までどおり select 側の仕組みに乗る。
+ */
+const CHIP_GROUPS = [
+  { name: 'key', select: 'keySelect', values: ['C', 'G', 'D', 'A'] },
+  { name: 'marks', select: 'marksSelect', values: ['both', 'color', 'off'] },
+  { name: 'hint', select: 'hintSelect', values: ['off', 'on'] },
+];
+const optionChips = new Map(CHIP_GROUPS.flatMap((group) => group.values
+  .map((value) => [`${group.name}:${value}`, byId(`${group.name}-chip-${value}`)])
+  .filter(([, chip]) => chip)));
+
 const screens = {
   setup: elements.setupScreen,
   check: elements.checkScreen,
@@ -146,6 +158,7 @@ const state = {
   config: null,
   mic: null,
   toneContext: null,
+  toneWave: null,
   holder: null,
   animationFrame: 0,
   timers: new Set(),
@@ -196,7 +209,6 @@ function normalizedSettings(raw = {}) {
     key: KEYS[raw.key] ? raw.key : DEFAULTS.key,
     count: VALID_COUNTS.has(count) ? count : DEFAULTS.count,
     hint: raw.hint === 'on' ? 'on' : DEFAULTS.hint,
-    sound: raw.sound === 'off' ? 'off' : DEFAULTS.sound,
     marks: VALID_MARKS.has(raw.marks) ? raw.marks : DEFAULTS.marks,
     strings: normalizedStrings(raw.strings),
     tolerance: TOL[raw.tolerance] ? raw.tolerance : DEFAULTS.tolerance,
@@ -263,7 +275,6 @@ function settingsFromForm() {
     key: elements.keySelect.value,
     count: elements.countSelect.value,
     hint: elements.hintSelect.value,
-    sound: elements.soundSelect.value,
     marks: elements.marksSelect.value,
     strings: pickedStrings,
     tolerance: elements.toleranceSelect.value,
@@ -314,7 +325,6 @@ function populateSettings(settings) {
   elements.keySelect.value = settings.key;
   elements.countSelect.value = String(settings.count);
   elements.hintSelect.value = settings.hint;
-  elements.soundSelect.value = settings.sound;
   elements.marksSelect.value = settings.marks;
   elements.toleranceSelect.value = settings.tolerance;
   elements.a4Select.value = String(settings.a4);
@@ -331,6 +341,7 @@ function populateSettings(settings) {
     controls[name].setAttribute('aria-describedby', 'teacher-notice');
   });
   elements.teacherNotice.hidden = !query.hasQuery;
+  renderOptionChips();
   syncPickedStrings();
   renderStringChoice();
   updateLevelDescription();
@@ -349,6 +360,29 @@ function syncPickedStrings() {
   const level = selectedLevel();
   if (!canChooseStrings(level)) return;
   pickedStrings = levelStrings(level, pickedStrings);
+}
+
+function renderOptionChips() {
+  for (const group of CHIP_GROUPS) {
+    const select = elements[group.select];
+    for (const value of group.values) {
+      const chip = optionChips.get(`${group.name}:${value}`);
+      if (!chip) continue;
+      chip.setAttribute('aria-pressed', select.value === value ? 'true' : 'false');
+      chip.disabled = Boolean(select.disabled);
+    }
+  }
+}
+
+function pickOption(group, value) {
+  const select = elements[group.select];
+  if (select.disabled) return;
+  select.value = value;
+  renderOptionChips();
+  syncPickedStrings();
+  renderStringChoice();
+  updateLevelDescription();
+  saveSettings(settingsFromForm());
 }
 
 function renderStringChoice() {
@@ -373,10 +407,10 @@ function renderStringChoice() {
     elements.stringsNote.textContent = '';
     return;
   }
-  const { min, max } = LEVELS[level].choose;
-  elements.stringsNote.textContent = min === max
-    ? `${min}本えらびます。別の弦を押すと、先に選んだほうと入れ替わります。`
-    : `1本から4本までえらべます。`;
+  const { max } = LEVELS[level].choose;
+  elements.stringsNote.textContent = max < ALL_STRING_IDS.length
+    ? `${max}本までえらべます。${max}本のときに別の弦を押すと、先に選んだほうと入れ替わります。`
+    : `1本から${max}本までえらべます。`;
 }
 
 function toggleString(stringId) {
@@ -387,7 +421,11 @@ function toggleString(stringId) {
   const at = current.indexOf(stringId);
 
   if (at >= 0) {
-    if (current.length <= min) return;
+    if (current.length <= min) {
+      // 押しても何も起きないボタンにしない。外せない理由をその場に出す。
+      elements.stringsNote.textContent = '弦は1本以上えらびます。先に別の弦を足してから外します。';
+      return;
+    }
     current.splice(at, 1);
   } else {
     current.push(stringId);
@@ -461,6 +499,7 @@ function closeRuntime() {
 
   const toneContext = state.toneContext;
   state.toneContext = null;
+  state.toneWave = null;
   if (toneContext && toneContext.state !== 'closed') {
     toneContext.close().catch(() => {});
   }
@@ -775,9 +814,13 @@ function passCurrentNote(mode, token = state.sessionId) {
   renderPractice();
 
   if (state.noteIndex === state.phrase.notes.length - 1) {
+    // 最後の音は、直後に鳴る4音そろいの和音が合図になる。合格音と重ねない。
     void completePhrase(token);
     return;
   }
+
+  // 譜面から目を離さずに正解が分かるように、耳へも返す。自分で進める手動モードには要らない。
+  if (mode === 'mic') void playPassChime();
 
   later(() => {
     state.noteIndex += 1;
@@ -856,7 +899,7 @@ async function completePhrase(token) {
   if (allPassed) {
     elements.practiceStatus.textContent = '4音そろいました。';
     renderPractice();
-    if (state.config.sound === 'on') soundDuration = await playCompletionChord();
+    soundDuration = await playCompletionChord();
   } else {
     elements.practiceStatus.textContent = '次のフレーズへ進みます。';
     renderPractice();
@@ -871,7 +914,11 @@ async function completePhrase(token) {
     state.previousPhrase = state.phrase;
     state.phraseIndex += 1;
     loadPhrase();
-  }, Math.max(520, soundDuration + 180), token);
+    /*
+     * 和音の残響でマイクを塞いでいる間に次のフレーズが始まると、1音目の頭が食われて
+     * 「弾いているのに進まない」になる。塞ぎが解けるまでは次を出さない。
+     */
+  }, Math.max(520, soundDuration + 260), token);
 }
 
 function revealHint() {
@@ -966,7 +1013,7 @@ function renderPractice() {
   elements.noteCount.textContent = `${Math.min(state.noteIndex + 1, 4)} / 4音`;
   elements.manualNotice.hidden = state.listenMode;
   elements.manualNextButton.hidden = state.listenMode;
-  elements.exampleButton.hidden = state.config.sound !== 'on';
+  elements.exampleButton.hidden = false;
 
   const note = currentNote();
   const showHint = Boolean(note) && state.hintStage >= 1;
@@ -1005,16 +1052,71 @@ async function audioContextForTone() {
   return state.toneContext;
 }
 
-function scheduleTone(context, midi, start, duration, volume = 0.055) {
+/*
+ * サイン波は基音しか鳴らない。iPhoneのスピーカーは200Hz前後から下をほとんど出せないので、
+ * ソ線やレ線のおてほんが「痩せて音程の分からない音」になっていた（2026-08-25 本人の指摘）。
+ * 倍音を重ねると、基音が出ない再生系でも倍音列から高さが分かる（missing fundamental）。
+ * 配分は弦楽器の実測スペクトルの傾向に寄せた概形で、採譜用の目安。実楽器の複製ではない。
+ */
+const TONE_HARMONICS = [0, 1, 0.72, 0.54, 0.40, 0.28, 0.19, 0.13, 0.09, 0.06, 0.04];
+/*
+ * 音量はOfflineAudioContextで実測して決めた（2026-08-25）。
+ * ソ3(196Hz)を300Hzハイパス（＝小型スピーカーが出せる帯域の代用）で測ると、
+ * サイン波0.055のRMSが0.020、この設定は0.076で約3.8倍。ピークは0.25前後でクリップしない。
+ */
+const TONE_VOLUME = 0.22;
+const CHORD_VOLUME = 0.1;
+const PASS_CHIME_VOLUME = 0.15;
+// 高次倍音のざらつきだけ削る。基音の6倍あたりまで通せば音程感は保たれる。
+const TONE_FILTER_RATIO = 6;
+const TONE_FILTER_MIN = 1800;
+const TONE_FILTER_MAX = 7000;
+
+function toneWave(context) {
+  if (typeof context.createPeriodicWave !== 'function') return null;
+  if (state.toneWave?.context === context) return state.toneWave.wave;
+  try {
+    const imag = Float32Array.from(TONE_HARMONICS);
+    const wave = context.createPeriodicWave(new Float32Array(imag.length), imag);
+    state.toneWave = { context, wave };
+    return wave;
+  } catch {
+    // 古い実装で作れなければサイン波へ落とす。鳴らないよりは痩せた音のほうがいい。
+    return null;
+  }
+}
+
+function scheduleTone(context, midi, start, duration, volume = TONE_VOLUME) {
   const oscillator = context.createOscillator();
   const gain = context.createGain();
-  oscillator.type = 'sine';
-  oscillator.frequency.setValueAtTime(mtof(midi, state.config.a4), start);
+  const frequency = mtof(midi, state.config.a4);
+  const wave = toneWave(context);
+
+  if (wave) oscillator.setPeriodicWave(wave);
+  else oscillator.type = 'sine';
+  oscillator.frequency.setValueAtTime(frequency, start);
+
   gain.gain.setValueAtTime(0.0001, start);
-  gain.gain.exponentialRampToValueAtTime(volume, start + 0.025);
-  gain.gain.setValueAtTime(volume, Math.max(start + 0.03, start + duration - 0.08));
+  gain.gain.exponentialRampToValueAtTime(volume, start + 0.03);
+  gain.gain.setValueAtTime(volume, Math.max(start + 0.04, start + duration - 0.09));
   gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
-  oscillator.connect(gain);
+
+  const filter = typeof context.createBiquadFilter === 'function'
+    ? context.createBiquadFilter()
+    : null;
+  if (filter) {
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(
+      Math.min(TONE_FILTER_MAX, Math.max(TONE_FILTER_MIN, frequency * TONE_FILTER_RATIO)),
+      start,
+    );
+    filter.Q.setValueAtTime(0.7, start);
+    oscillator.connect(filter);
+    filter.connect(gain);
+  } else {
+    oscillator.connect(gain);
+  }
+
   gain.connect(context.destination);
   oscillator.start(start);
   oscillator.stop(start + duration + 0.02);
@@ -1022,7 +1124,15 @@ function scheduleTone(context, midi, start, duration, volume = 0.055) {
   oscillator.addEventListener('ended', () => state.oscillators.delete(oscillator), { once: true });
 }
 
-async function playSequence(midis, { noteDuration = 0.52, gap = 0.09, chord = false } = {}) {
+async function playSequence(midis, {
+  noteDuration = 0.52,
+  gap = 0.09,
+  chord = false,
+  volume = TONE_VOLUME,
+  tailDuration = 0,
+  muteMargin = 160,
+  holderMute = true,
+} = {}) {
   const token = state.sessionId;
   try {
     const context = await audioContextForTone();
@@ -1037,20 +1147,36 @@ async function playSequence(midis, { noteDuration = 0.52, gap = 0.09, chord = fa
     stopOscillators();
     const start = context.currentTime + 0.035;
     if (chord) {
-      midis.forEach((midi) => scheduleTone(context, midi, start, noteDuration, 0.032));
+      midis.forEach((midi) => scheduleTone(context, midi, start, noteDuration, volume));
     } else {
       midis.forEach((midi, index) => {
-        scheduleTone(context, midi, start + index * (noteDuration + gap), noteDuration);
+        // 最後の音だけ余韻を足すと、速い上昇が「ピロピロ〜ん」と閉じて終わりが分かる。
+        const isLast = index === midis.length - 1;
+        scheduleTone(
+          context,
+          midi,
+          start + index * (noteDuration + gap),
+          noteDuration + (isLast ? tailDuration : 0),
+          volume,
+        );
       });
     }
     const seconds = chord
       ? noteDuration
-      : midis.length * noteDuration + Math.max(0, midis.length - 1) * gap;
+      : midis.length * noteDuration + Math.max(0, midis.length - 1) * gap + tailDuration;
     const duration = Math.ceil(seconds * 1000) + 90;
-    const muteUntil = performance.now() + duration + 140;
+    // 音量を上げたぶん残響も伸びるので、マイクを塞ぐ余白を広く取る。
+    const muteUntil = performance.now() + duration + muteMargin;
     state.voiceMuteUntil = Math.max(state.voiceMuteUntil, muteUntil);
-    state.holder?.muteUntil(muteUntil);
-    updateHoldProgress(0);
+    /*
+     * holder まで塞ぐのは、こちらの音を生徒の演奏として数えうる長い音だけにする。
+     * 合格音のような短い音で塞ぐと、muteUntil() が受付を閉じたまま次の音の判定へ入り、
+     * 弓を止めずに弾き続けた生徒がいつまでも合格しなくなる（テストで再現した）。
+     */
+    if (holderMute) {
+      state.holder?.muteUntil(muteUntil);
+      updateHoldProgress(0);
+    }
     return duration;
   } catch {
     elements.practiceStatus.textContent = 'おてほんの音を準備できませんでした。';
@@ -1059,7 +1185,7 @@ async function playSequence(midis, { noteDuration = 0.52, gap = 0.09, chord = fa
 }
 
 async function playExample(allNotes) {
-  if (state.screen !== 'practice' || state.config.sound !== 'on' || state.processing) return;
+  if (state.screen !== 'practice' || state.processing) return;
   const record = currentRecord();
   if (record) record.hints.add(allNotes ? '4音のおてほん' : 'おてほん');
   elements.practiceStatus.textContent = allNotes
@@ -1084,6 +1210,25 @@ async function playCompletionChord() {
   return playSequence([tonic, tonic + 4, tonic + 7], {
     noteDuration: 0.42,
     chord: true,
+    volume: CHORD_VOLUME,
+  });
+}
+
+/*
+ * 1音合格するたびに鳴らす短い上昇。画面を見ていなくても正解が分かることが目的なので、
+ * 第1ポジションの最高音（シ5=988Hz）より上へ置いて、弾いている音に埋もれないようにする。
+ * 調の主和音を2オクターブ上で分散させるため、どの調でも調外の音は鳴らない。
+ */
+async function playPassChime() {
+  const base = TONIC_MIDI[state.config.key] + 24;
+  return playSequence([base, base + 4, base + 7], {
+    noteDuration: 0.045,
+    gap: 0,
+    // 次の音へ進む300msより先に鳴り終わらせ、生徒が弾き始める前に道をあける。
+    tailDuration: 0.1,
+    volume: PASS_CHIME_VOLUME,
+    muteMargin: 0,
+    holderMute: false,
   });
 }
 
@@ -1269,6 +1414,7 @@ elements.settingsForm.addEventListener('submit', (event) => {
 });
 
 elements.settingsForm.addEventListener('change', () => {
+  renderOptionChips();
   syncPickedStrings();
   renderStringChoice();
   updateLevelDescription();
@@ -1278,6 +1424,13 @@ elements.settingsForm.addEventListener('change', () => {
 stringChips.forEach((chip, id) => {
   chip?.addEventListener('click', () => toggleString(id));
 });
+
+for (const group of CHIP_GROUPS) {
+  for (const value of group.values) {
+    optionChips.get(`${group.name}:${value}`)
+      ?.addEventListener('click', () => pickOption(group, value));
+  }
+}
 
 elements.withoutMicButton.addEventListener('click', () => {
   if (state.screen !== 'check') return;

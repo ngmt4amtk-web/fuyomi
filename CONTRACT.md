@@ -33,12 +33,13 @@ export const LEVELS = {
   2:{label:'ラ線だけ',   strings:['A'],             maxFinger:3},
   3:{label:'レ線だけ',   strings:['D'],             maxFinger:3},
   4:{label:'ソ線だけ',   strings:['G'],             maxFinger:3},
-  5:{label:'選んだ2本',  strings:null, choose:{min:2,max:2}, preset:['A','E'],  maxFinger:3},
+  5:{label:'選んだ2本',  strings:null, choose:{min:1,max:2}, preset:['A','E'],  maxFinger:3},
   6:{label:'選んだ弦で4の指まで', strings:null, choose:{min:1,max:4}, preset:['A'], maxFinger:4},
   7:{label:'4本ぜんぶ',  strings:['G','D','A','E'], maxFinger:3},
   8:{label:'4本ぜんぶ・4の指まで', strings:['G','D','A','E'], maxFinger:4}
 };
 // strings が null のレベルだけ、画面で選んだ弦を受け取る。本数が choose に合わなければ preset。
+// min は上限ちょうどにしない（選択中の弦が1つも外せないボタンになる）。
 export function levelStrings(level, picked=null) // → ['G','D',...]（必ずALL_STRING_IDSの順）
 export function canChooseStrings(level)         // → boolean
 export function makePhrase({level, key, length=4, prev=null, rng=Math.random, strings=null})

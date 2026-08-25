@@ -218,19 +218,62 @@ h2 {
   font-size: 0.83rem;
 }
 
+.settings-stack {
+  display: grid;
+  gap: 18px;
+}
+
+/* selectは値の置き場として残し、見た目と操作はチップが持つ。 */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  min-height: 0;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* 4つそろう行は必ず1行に並べる。折り返すと最後の1つだけ幅が違って別物に見える。 */
+.chip-row-4,
+.string-chips {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.option-chip {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0 10px;
+  border: 1.5px solid var(--line-strong);
+  background: var(--surface-raised);
+  color: var(--text);
+  font-size: 0.94rem;
+  font-weight: 650;
+}
+
+.option-chip[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
 .chip-note {
   min-height: 1.5em;
   margin: 8px 2px 0;
   color: var(--muted);
   font-size: 0.79rem;
   font-weight: 500;
-}
-
-.string-chips {
-  /* 4本を必ず1行に並べる。折り返すと最後の1本だけ幅が違って別物に見える。 */
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px;
 }
 
 .string-chip {

@@ -108,7 +108,7 @@ test('LEVELSは契約どおりの8段階を公開する', () => {
     2: {label: 'ラ線だけ', strings: ['A'], maxFinger: 3},
     3: {label: 'レ線だけ', strings: ['D'], maxFinger: 3},
     4: {label: 'ソ線だけ', strings: ['G'], maxFinger: 3},
-    5: {label: '選んだ2本', strings: null, choose: {min: 2, max: 2}, preset: ['A', 'E'], maxFinger: 3},
+    5: {label: '選んだ2本', strings: null, choose: {min: 1, max: 2}, preset: ['A', 'E'], maxFinger: 3},
     6: {label: '選んだ弦で4の指まで', strings: null, choose: {min: 1, max: 4}, preset: ['A'], maxFinger: 4},
     7: {label: '4本ぜんぶ', strings: ['G', 'D', 'A', 'E'], maxFinger: 3},
     8: {label: '4本ぜんぶ・4の指まで', strings: ['G', 'D', 'A', 'E'], maxFinger: 4}
@@ -126,11 +126,12 @@ test('levelStringsは選べるレベルだけ選択を受け取り、本数が�
   assert.deepEqual(levelStrings(1, ['G', 'D']), ['E']);
   assert.deepEqual(levelStrings(8, ['A']), ['G', 'D', 'A', 'E']);
 
-  // レベル5はちょうど2本。多くても少なくても既定へ落ちる。
+  // レベル5は2本まで。1本でも通し、多すぎるときだけ既定へ落ちる。
   assert.deepEqual(levelStrings(5, null), ['A', 'E']);
   assert.deepEqual(levelStrings(5, ['D', 'G']), ['G', 'D']);
-  assert.deepEqual(levelStrings(5, ['A']), ['A', 'E']);
+  assert.deepEqual(levelStrings(5, ['A']), ['A']);
   assert.deepEqual(levelStrings(5, ['G', 'D', 'A']), ['A', 'E']);
+  assert.deepEqual(levelStrings(5, []), ['A', 'E']);
 
   // レベル6は1〜4本。並びは常に低い弦から。
   assert.deepEqual(levelStrings(6, null), ['A']);
@@ -142,7 +143,7 @@ test('levelStringsは選べるレベルだけ選択を受け取り、本数が�
 });
 
 test('選んだ弦だけがフレーズに出る', () => {
-  for (const [level, picked] of [[5, ['G', 'D']], [5, ['D', 'E']], [6, ['G']], [6, ['D', 'A', 'E']]]) {
+  for (const [level, picked] of [[5, ['G', 'D']], [5, ['D', 'E']], [5, ['E']], [6, ['G']], [6, ['D', 'A', 'E']]]) {
     for (const key of Object.keys(KEYS)) {
       const rng = lcg(level * 31 + key.charCodeAt(0));
       for (let index = 0; index < 60; index++) {

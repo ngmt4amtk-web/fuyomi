@@ -351,7 +351,7 @@ function skipWholeSession(harness){
   }
 }
 
-function passWholeSession(harness, phrases, misses = new Set()){
+async function passWholeSession(harness, phrases, misses = new Set()){
   for(let phraseIndex = 0; phraseIndex < 3; phraseIndex++){
     for(let noteIndex = 0; noteIndex < 4; noteIndex++){
       const target = phrases[phraseIndex][noteIndex].midi;
@@ -365,7 +365,10 @@ function passWholeSession(harness, phrases, misses = new Set()){
         harness.clock.advance(300);
         armWithSilence(harness);
       } else {
-        harness.clock.advance(520);
+        // 4音そろうと完了の和音が鳴る。和音の予約はawaitの先なので、
+        // 時計を進める前にマイクロタスクを流して次フレーズのタイマーを登録させる。
+        await flushAsync();
+        harness.clock.advance(800);
         if(phraseIndex < 2) armWithSilence(harness);
       }
     }
@@ -453,7 +456,7 @@ test('F: やり直しは音高でまとめ、勧めた運指を従属情報と�
   ];
   const harness = createHarness({phrases});
   await startMicPractice(harness, {level:6});
-  passWholeSession(harness, phrases, new Set(['0:0', '1:0']));
+  await passWholeSession(harness, phrases, new Set(['0:0', '1:0']));
 
   const trouble = harness.document.getElementById('trouble-list').children;
   assert.equal(trouble.length, 1);
@@ -481,7 +484,7 @@ test('G: 画面遷移中にやめると、遅いタイマーが結果画面を�
 test('G: 最終音の合格後に結果へ移ると rAF・タイマー・マイクが残らない', async () => {
   const harness = createHarness();
   await startMicPractice(harness);
-  passWholeSession(harness, DEFAULT_PHRASES);
+  await passWholeSession(harness, DEFAULT_PHRASES);
 
   assert.equal(harness.document.getElementById('result-screen').hidden, false);
   assert.equal(harness.clock.pendingFrames, 0);
@@ -511,11 +514,16 @@ test('I: 弦を選ぶレベルでは、押した弦が画面と出題の両方�
   assert.equal(field.hidden, false);
   assert.deepEqual(pressedStrings(document), ['A', 'E'], 'レベル5の既定はラ線とミ線');
 
-  // 3本目を押すと、先に選んだ弦から外れて必ず2本に保たれる。
+  // 3本目を押すと、先に選んだ弦から外れて2本に保たれる。
   document.getElementById('string-chip-G').click();
   assert.deepEqual(pressedStrings(document), ['G', 'E']);
-  // 2本を割る操作は受け付けない。
+  // 選んでいる弦は押して外せる。外せないボタンにしない。
+  document.getElementById('string-chip-E').click();
+  assert.deepEqual(pressedStrings(document), ['G']);
+  // ただし最後の1本は外さない。出題する弦が無くなるため。
   document.getElementById('string-chip-G').click();
+  assert.deepEqual(pressedStrings(document), ['G']);
+  document.getElementById('string-chip-E').click();
   assert.deepEqual(pressedStrings(document), ['G', 'E']);
 
   await startMicPractice(harness, {level:5});
