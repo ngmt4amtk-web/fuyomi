@@ -16,10 +16,10 @@ import {
 
 test('定数は契約どおりの弦と調を持つ', () => {
   assert.deepEqual(STRINGS, [
-    {id: 'G', midi: 55, label: 'ソ線', color: '#3B6FE2'},
-    {id: 'D', midi: 62, label: 'レ線', color: '#E28B3B'},
-    {id: 'A', midi: 69, label: 'ラ線', color: '#E23B3B'},
-    {id: 'E', midi: 76, label: 'ミ線', color: '#2FA84F'}
+    {id: 'G', midi: 55, label: 'ソ線', color: '#3B6FE2', colorDark: '#7FA6F5'},
+    {id: 'D', midi: 62, label: 'レ線', color: '#E28B3B', colorDark: '#F0A868'},
+    {id: 'A', midi: 69, label: 'ラ線', color: '#E23B3B', colorDark: '#F07272'},
+    {id: 'E', midi: 76, label: 'ミ線', color: '#2FA84F', colorDark: '#63C97E'}
   ]);
   assert.deepEqual(KEYS, {
     A: {jp: 'イ長調', de: 'A-dur', sharps: 3},

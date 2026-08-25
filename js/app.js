@@ -1,4 +1,10 @@
-import { LEVELS, makePhrase as defaultMakePhrase } from './phrase.js';
+import {
+  ALL_STRING_IDS,
+  LEVELS,
+  canChooseStrings,
+  levelStrings,
+  makePhrase as defaultMakePhrase,
+} from './phrase.js';
 import {
   TOL,
   createHolder as defaultCreateHolder,
@@ -14,6 +20,7 @@ import {
   mtof,
   noteNameJa,
   positionsForMidi,
+  stringColor,
 } from './theory.js';
 import { renderStaff as defaultRenderStaff } from './staff.js';
 
@@ -57,10 +64,14 @@ const DEFAULTS = Object.freeze({
   count: 5,
   hint: 'off',
   sound: 'on',
+  marks: 'both',
+  // 弦を選べるレベルで未選択のときは、レベルごとの既定（LEVELS.preset）へ落とす。
+  strings: null,
   tolerance: 'loose',
   a4: 442,
 });
 const VALID_COUNTS = new Set([3, 5, 10]);
+const VALID_MARKS = new Set(['both', 'color', 'off']);
 const VALID_A4 = new Set([440, 442, 443]);
 const STRING_BY_ID = new Map(STRINGS.map((string) => [string.id, string]));
 const TONIC_MIDI = { C: 60, G: 67, D: 62, A: 69 };
@@ -73,6 +84,10 @@ const elements = {
   resultScreen: byId('result-screen'),
   settingsForm: byId('settings-form'),
   levelSelect: byId('level-select'),
+  marksSelect: byId('marks-select'),
+  stringsField: byId('strings-field'),
+  stringsNote: byId('strings-note'),
+  stringLegend: byId('string-legend'),
   keySelect: byId('key-select'),
   countSelect: byId('count-select'),
   hintSelect: byId('hint-select'),
@@ -115,6 +130,8 @@ const elements = {
   introStaff: byId('intro-staff'),
   introCloseButton: byId('intro-close-button'),
 };
+
+const stringChips = new Map(ALL_STRING_IDS.map((id) => [id, byId(`string-chip-${id}`)]));
 
 const screens = {
   setup: elements.setupScreen,
@@ -164,6 +181,12 @@ function readStorage() {
   }
 }
 
+function normalizedStrings(raw) {
+  if (!Array.isArray(raw)) return null;
+  const picked = ALL_STRING_IDS.filter((id) => raw.includes(id));
+  return picked.length ? picked : null;
+}
+
 function normalizedSettings(raw = {}) {
   const level = Number(raw.level);
   const count = Number(raw.count);
@@ -174,6 +197,8 @@ function normalizedSettings(raw = {}) {
     count: VALID_COUNTS.has(count) ? count : DEFAULTS.count,
     hint: raw.hint === 'on' ? 'on' : DEFAULTS.hint,
     sound: raw.sound === 'off' ? 'off' : DEFAULTS.sound,
+    marks: VALID_MARKS.has(raw.marks) ? raw.marks : DEFAULTS.marks,
+    strings: normalizedStrings(raw.strings),
     tolerance: TOL[raw.tolerance] ? raw.tolerance : DEFAULTS.tolerance,
     a4: VALID_A4.has(a4) ? a4 : DEFAULTS.a4,
   };
@@ -208,6 +233,16 @@ function queryOverrides() {
     locked.add('hint');
   }
 
+  const marks = params.get('marks');
+  if (params.has('marks') && VALID_MARKS.has(marks)) {
+    overrides.marks = marks;
+    locked.add('marks');
+  }
+
+  // 講師が渡すリンクでは、弦を GDAE のような並びで書けるようにする。
+  const strings = normalizedStrings([...(params.get('strings') || '').toUpperCase()]);
+  if (strings) overrides.strings = strings;
+
   return { overrides, locked, hasQuery: window.location.search.length > 1 };
 }
 
@@ -219,6 +254,9 @@ const initialSettings = normalizedSettings({
   ...query.overrides,
 });
 
+// 弦の選択は select ではないので、押した順を保つ配列としてここで持つ。
+let pickedStrings = initialSettings.strings ? [...initialSettings.strings] : null;
+
 function settingsFromForm() {
   return normalizedSettings({
     level: elements.levelSelect.value,
@@ -226,6 +264,8 @@ function settingsFromForm() {
     count: elements.countSelect.value,
     hint: elements.hintSelect.value,
     sound: elements.soundSelect.value,
+    marks: elements.marksSelect.value,
+    strings: pickedStrings,
     tolerance: elements.toleranceSelect.value,
     a4: elements.a4Select.value,
   });
@@ -275,6 +315,7 @@ function populateSettings(settings) {
   elements.countSelect.value = String(settings.count);
   elements.hintSelect.value = settings.hint;
   elements.soundSelect.value = settings.sound;
+  elements.marksSelect.value = settings.marks;
   elements.toleranceSelect.value = settings.tolerance;
   elements.a4Select.value = String(settings.a4);
 
@@ -283,22 +324,96 @@ function populateSettings(settings) {
     key: elements.keySelect,
     count: elements.countSelect,
     hint: elements.hintSelect,
+    marks: elements.marksSelect,
   };
   query.locked.forEach((name) => {
     controls[name].disabled = true;
     controls[name].setAttribute('aria-describedby', 'teacher-notice');
   });
   elements.teacherNotice.hidden = !query.hasQuery;
+  syncPickedStrings();
+  renderStringChoice();
   updateLevelDescription();
 }
 
-function updateLevelDescription() {
+function selectedLevel() {
   const level = Number(elements.levelSelect.value);
-  if (level === 6) {
-    elements.levelDescription.textContent = '4の指は隣の開放弦と同じ高さ。音では区別できないので、弦は自分で見て確かめます。';
+  return LEVELS[level] ? level : DEFAULTS.level;
+}
+
+/*
+ * 弦を選べるレベルでは、本数がそのレベルの条件に合わない選択を既定へ落として、
+ * 画面に見えている弦と実際に出題する弦を必ず一致させる。
+ */
+function syncPickedStrings() {
+  const level = selectedLevel();
+  if (!canChooseStrings(level)) return;
+  pickedStrings = levelStrings(level, pickedStrings);
+}
+
+function renderStringChoice() {
+  const level = selectedLevel();
+  const choosable = canChooseStrings(level);
+  elements.stringsField.hidden = !choosable;
+
+  const active = new Set(choosable ? levelStrings(level, pickedStrings) : []);
+  const theme = currentTheme();
+  ALL_STRING_IDS.forEach((id) => {
+    const chip = stringChips.get(id);
+    if (!chip) return;
+    const on = active.has(id);
+    const color = stringColor(id, theme);
+    chip.setAttribute('aria-pressed', on ? 'true' : 'false');
+    chip.style.borderColor = color;
+    chip.style.background = on ? color : '';
+    chip.style.color = on ? '#ffffff' : color;
+  });
+
+  if (!choosable) {
+    elements.stringsNote.textContent = '';
     return;
   }
-  elements.levelDescription.textContent = `第1ポジションで、${LEVELS[level].label}を使います。`;
+  const { min, max } = LEVELS[level].choose;
+  elements.stringsNote.textContent = min === max
+    ? `${min}本えらびます。別の弦を押すと、先に選んだほうと入れ替わります。`
+    : `1本から4本までえらべます。`;
+}
+
+function toggleString(stringId) {
+  const level = selectedLevel();
+  if (!canChooseStrings(level)) return;
+  const { min, max } = LEVELS[level].choose;
+  const current = [...levelStrings(level, pickedStrings)];
+  const at = current.indexOf(stringId);
+
+  if (at >= 0) {
+    if (current.length <= min) return;
+    current.splice(at, 1);
+  } else {
+    current.push(stringId);
+    // 上限を超えたら、いちばん先に選んだ弦から外す。押した弦は必ず残る。
+    while (current.length > max) current.shift();
+  }
+
+  pickedStrings = current;
+  renderStringChoice();
+  updateLevelDescription();
+  saveSettings(settingsFromForm());
+}
+
+function stringsLabelText(stringIds) {
+  return stringIds
+    .map((id) => STRING_BY_ID.get(id)?.label || `${id}線`)
+    .join('・');
+}
+
+function updateLevelDescription() {
+  const level = selectedLevel();
+  const stringIds = levelStrings(level, pickedStrings);
+  const where = `第1ポジションで、${stringsLabelText(stringIds)}を使います。`;
+  elements.levelDescription.textContent = LEVELS[level].maxFinger >= 4
+    ? `${where}4の指は隣の開放弦と同じ高さ。音では区別できないので、弦は自分で見て確かめます。`
+    : where;
 }
 
 function showScreen(name) {
@@ -502,6 +617,7 @@ function loadPhrase() {
     key: state.config.key,
     length: 4,
     prev: state.previousPhrase,
+    strings: state.config.strings,
   });
   state.noteIndex = 0;
   state.outcomes = Array(4).fill(null);
@@ -796,8 +912,30 @@ function buildStaffNotes() {
         hint.finger = note.finger;
       }
     }
-    return { midi: note.midi, state: noteState, hint };
+    // 弦と指は staff.js が色と指番号に使う。判定には一切関わらない、勧める運指の表示。
+    return {
+      midi: note.midi,
+      stringId: note.stringId,
+      finger: note.finger,
+      state: noteState,
+      hint,
+    };
   });
+}
+
+function renderStringLegend() {
+  const show = state.config?.marks !== 'off' && Boolean(state.phrase);
+  elements.stringLegend.hidden = !show;
+  if (!show) return;
+
+  const theme = currentTheme();
+  const items = levelStrings(state.config.level, state.config.strings).map((id) => {
+    const item = document.createElement('span');
+    item.style.color = stringColor(id, theme);
+    item.textContent = `● ${STRING_BY_ID.get(id)?.label || `${id}線`}`;
+    return item;
+  });
+  elements.stringLegend.replaceChildren(...items);
 }
 
 function alternatePositionText(note) {
@@ -819,7 +957,9 @@ function renderPractice() {
     notes: staffNotes,
     width: displayWidth,
     theme,
+    marks: state.config.marks,
   });
+  renderStringLegend();
 
   elements.practiceCount.textContent = `${state.phraseIndex + 1} / ${state.config.count} フレーズ`;
   elements.practiceKey.textContent = `${KEYS[state.config.key].jp}（${state.config.key}）`;
@@ -841,7 +981,7 @@ function renderPractice() {
     const alternate = state.hintStage >= 2 ? alternatePositionText(note) : '';
     elements.samePitchNote.hidden = !alternate;
     elements.samePitchNote.textContent = alternate;
-    elements.fourthFingerNote.hidden = !(state.hintStage >= 2 && state.config.level === 6 && note.finger === 4);
+    elements.fourthFingerNote.hidden = !(state.hintStage >= 2 && note.finger === 4);
   }
 }
 
@@ -1129,8 +1269,14 @@ elements.settingsForm.addEventListener('submit', (event) => {
 });
 
 elements.settingsForm.addEventListener('change', () => {
+  syncPickedStrings();
+  renderStringChoice();
   updateLevelDescription();
   saveSettings(settingsFromForm());
+});
+
+stringChips.forEach((chip, id) => {
+  chip?.addEventListener('click', () => toggleString(id));
 });
 
 elements.withoutMicButton.addEventListener('click', () => {
@@ -1184,6 +1330,7 @@ resizeObserver.observe(elements.staffWrap);
 
 const handleThemeChange = () => {
   if (!elements.introDialog.hidden) renderIntroStaff();
+  if (state.screen === 'setup') renderStringChoice();
   if (state.screen === 'practice') renderPractice();
 };
 if (typeof colorScheme.addEventListener === 'function') {

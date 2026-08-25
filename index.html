@@ -55,13 +55,33 @@
             </select>
           </label>
 
-          <label class="field field-wide" for="sound-select">
+          <label class="field" for="sound-select">
             <span>おてほんの音</span>
             <select id="sound-select" name="sound">
               <option value="on">オン</option>
               <option value="off">オフ</option>
             </select>
           </label>
+
+          <label class="field" for="marks-select">
+            <span>弦の色と指番号</span>
+            <select id="marks-select" name="marks">
+              <option value="both">色と指番号を出す</option>
+              <option value="color">色だけ出す</option>
+              <option value="off">出さない</option>
+            </select>
+          </label>
+
+          <div class="field field-wide" id="strings-field" hidden>
+            <span id="strings-label">使う弦</span>
+            <div class="string-chips" role="group" aria-labelledby="strings-label">
+              <button id="string-chip-G" class="string-chip" type="button" aria-pressed="false">ソ線</button>
+              <button id="string-chip-D" class="string-chip" type="button" aria-pressed="false">レ線</button>
+              <button id="string-chip-A" class="string-chip" type="button" aria-pressed="false">ラ線</button>
+              <button id="string-chip-E" class="string-chip" type="button" aria-pressed="false">ミ線</button>
+            </div>
+            <p id="strings-note" class="chip-note"></p>
+          </div>
         </div>
 
         <p id="level-description" class="field-note"></p>
@@ -132,6 +152,8 @@
 
       <div class="practice-stage">
         <div id="staff-wrap" class="staff-wrap" aria-live="polite"></div>
+
+        <p id="string-legend" class="string-legend" aria-label="弦の色" hidden></p>
 
         <div class="hold-area">
           <div class="hold-labels">

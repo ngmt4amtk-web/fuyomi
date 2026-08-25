@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import {LEVELS, makePhrase} from '../js/phrase.js';
+import {ALL_STRING_IDS, LEVELS, canChooseStrings, levelStrings, makePhrase} from '../js/phrase.js';
 import {KEYS, STRINGS, fingering, midiToStaff} from '../js/theory.js';
 
 const TONIC_PITCH_CLASS = {C: 0, G: 7, D: 2, A: 9};
@@ -33,11 +33,11 @@ function contourOf(phrase, key) {
   return last > 0 ? '上昇' : '下降';
 }
 
-function allowedPositions(levelNumber, key) {
+function allowedPositions(levelNumber, key, picked = null) {
   const level = LEVELS[levelNumber];
   const positions = new Map();
 
-  for (const stringId of level.strings) {
+  for (const stringId of levelStrings(levelNumber, picked)) {
     const string = STRINGS.find(candidate => candidate.id === stringId);
     for (const position of fingering(string.midi, key)) {
       if (position.finger > level.maxFinger) continue;
@@ -48,12 +48,13 @@ function allowedPositions(levelNumber, key) {
   return positions;
 }
 
-function assertValidPhrase(phrase, {level, key, length}) {
+function assertValidPhrase(phrase, {level, key, length, picked = null}) {
   assert.equal(phrase.level, level);
   assert.equal(phrase.key, key);
   assert.equal(phrase.notes.length, length);
+  assert.deepEqual(phrase.strings, levelStrings(level, picked));
 
-  const allowed = allowedPositions(level, key);
+  const allowed = allowedPositions(level, key, picked);
   let leapCount = 0;
   let sameRun = 0;
   let lastMidi = null;
@@ -101,15 +102,58 @@ function assertValidPhrase(phrase, {level, key, length}) {
   assert.ok(STABLE_INTERVALS.has(stableInterval), '最後は主音・第3音・第5音のいずれか');
 }
 
-test('LEVELSは契約どおりの6段階を公開する', () => {
+test('LEVELSは契約どおりの8段階を公開する', () => {
   assert.deepEqual(LEVELS, {
-    1: {label: 'ラ線だけ', strings: ['A'], maxFinger: 3},
-    2: {label: 'ミ線だけ', strings: ['E'], maxFinger: 3},
-    3: {label: 'ラ線とミ線', strings: ['A', 'E'], maxFinger: 3},
-    4: {label: 'レ線とソ線', strings: ['D', 'G'], maxFinger: 3},
-    5: {label: '4本ぜんぶ', strings: ['G', 'D', 'A', 'E'], maxFinger: 3},
-    6: {label: '4の指まで', strings: ['G', 'D', 'A', 'E'], maxFinger: 4}
+    1: {label: 'ミ線だけ', strings: ['E'], maxFinger: 3},
+    2: {label: 'ラ線だけ', strings: ['A'], maxFinger: 3},
+    3: {label: 'レ線だけ', strings: ['D'], maxFinger: 3},
+    4: {label: 'ソ線だけ', strings: ['G'], maxFinger: 3},
+    5: {label: '選んだ2本', strings: null, choose: {min: 2, max: 2}, preset: ['A', 'E'], maxFinger: 3},
+    6: {label: '選んだ弦で4の指まで', strings: null, choose: {min: 1, max: 4}, preset: ['A'], maxFinger: 4},
+    7: {label: '4本ぜんぶ', strings: ['G', 'D', 'A', 'E'], maxFinger: 3},
+    8: {label: '4本ぜんぶ・4の指まで', strings: ['G', 'D', 'A', 'E'], maxFinger: 4}
   });
+  assert.deepEqual(ALL_STRING_IDS, ['G', 'D', 'A', 'E']);
+});
+
+test('levelStringsは選べるレベルだけ選択を受け取り、本数が合わなければ既定へ落とす', () => {
+  assert.equal(canChooseStrings(1), false);
+  assert.equal(canChooseStrings(5), true);
+  assert.equal(canChooseStrings(6), true);
+  assert.equal(canChooseStrings(8), false);
+
+  // 選べないレベルは選択を無視する。
+  assert.deepEqual(levelStrings(1, ['G', 'D']), ['E']);
+  assert.deepEqual(levelStrings(8, ['A']), ['G', 'D', 'A', 'E']);
+
+  // レベル5はちょうど2本。多くても少なくても既定へ落ちる。
+  assert.deepEqual(levelStrings(5, null), ['A', 'E']);
+  assert.deepEqual(levelStrings(5, ['D', 'G']), ['G', 'D']);
+  assert.deepEqual(levelStrings(5, ['A']), ['A', 'E']);
+  assert.deepEqual(levelStrings(5, ['G', 'D', 'A']), ['A', 'E']);
+
+  // レベル6は1〜4本。並びは常に低い弦から。
+  assert.deepEqual(levelStrings(6, null), ['A']);
+  assert.deepEqual(levelStrings(6, ['E', 'G']), ['G', 'E']);
+  assert.deepEqual(levelStrings(6, []), ['A']);
+  assert.deepEqual(levelStrings(6, ['A', 'E', 'D', 'G']), ['G', 'D', 'A', 'E']);
+
+  assert.throws(() => levelStrings(9), RangeError);
+});
+
+test('選んだ弦だけがフレーズに出る', () => {
+  for (const [level, picked] of [[5, ['G', 'D']], [5, ['D', 'E']], [6, ['G']], [6, ['D', 'A', 'E']]]) {
+    for (const key of Object.keys(KEYS)) {
+      const rng = lcg(level * 31 + key.charCodeAt(0));
+      for (let index = 0; index < 60; index++) {
+        const phrase = makePhrase({level, key, strings: picked, rng});
+        assertValidPhrase(phrase, {level, key, length: 4, picked});
+        for (const note of phrase.notes) {
+          assert.ok(picked.includes(note.stringId), `${note.stringId}線は選んでいない`);
+        }
+      }
+    }
+  }
 });
 
 test('全レベル・全調で200フレーズずつ音楽的ルールを守る', () => {
@@ -153,8 +197,8 @@ test('同じseedなら連続生成しても同じフレーズ列になる', () =
   let rightPrev = null;
 
   for (let index = 0; index < 30; index++) {
-    const left = makePhrase({level: 6, key: 'A', length: 6, prev: leftPrev, rng: leftRng});
-    const right = makePhrase({level: 6, key: 'A', length: 6, prev: rightPrev, rng: rightRng});
+    const left = makePhrase({level: 8, key: 'A', length: 6, prev: leftPrev, rng: leftRng});
+    const right = makePhrase({level: 8, key: 'A', length: 6, prev: rightPrev, rng: rightRng});
     assert.deepEqual(left, right);
     leftPrev = left;
     rightPrev = right;
@@ -164,7 +208,7 @@ test('同じseedなら連続生成しても同じフレーズ列になる', () =
 test('異なる100 seedから少なくとも80種類のフレーズが生まれる', () => {
   const variants = new Set();
   for (let seed = 1; seed <= 100; seed++) {
-    variants.add(midiSequence(makePhrase({level: 6, key: 'A', rng: lcg(seed)})));
+    variants.add(midiSequence(makePhrase({level: 8, key: 'A', rng: lcg(seed)})));
   }
   assert.ok(variants.size >= 80, `異なるフレーズは ${variants.size}/100 種類`);
 });
@@ -195,11 +239,11 @@ test('全レベル・全調で上昇・下降・山・谷の輪郭が一方向�
 
 test('rngが同じ値を返し続けてもprevと異なる決定的フォールバックを返す', () => {
   const fixedRng = () => 0;
-  const first = makePhrase({level: 6, key: 'D', rng: fixedRng});
-  const next = makePhrase({level: 6, key: 'D', prev: first, rng: fixedRng});
+  const first = makePhrase({level: 8, key: 'D', rng: fixedRng});
+  const next = makePhrase({level: 8, key: 'D', prev: first, rng: fixedRng});
 
   assert.notEqual(midiSequence(next), midiSequence(first));
-  assertValidPhrase(next, {level: 6, key: 'D', length: 4});
+  assertValidPhrase(next, {level: 8, key: 'D', length: 4});
 });
 
 test('同音異弦では同じ弦を保つ場合と少ない指へ移る場合の両方を守る', () => {
@@ -207,8 +251,8 @@ test('同音異弦では同じ弦を保つ場合と少ない指へ移る場合�
   let sawLowerFinger = false;
 
   for (let seed = 1; seed <= 2000 && !(sawSameString && sawLowerFinger); seed++) {
-    const phrase = makePhrase({level: 6, key: 'D', length: 6, rng: lcg(seed)});
-    const allowed = allowedPositions(6, 'D');
+    const phrase = makePhrase({level: 8, key: 'D', length: 6, rng: lcg(seed)});
+    const allowed = allowedPositions(8, 'D');
 
     phrase.notes.forEach((note, index) => {
       const positions = allowed.get(note.midi);

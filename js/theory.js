@@ -1,9 +1,22 @@
+/*
+ * colorは姉妹アプリ「ゆびいろ」と同じ弦の色。colorDarkは同じ色相のまま明度を上げた
+ * ダーク背景用で、暗い地の上で青と緑が沈むのを防ぐためだけに置いている。
+ */
 export const STRINGS = [
-  {id: 'G', midi: 55, label: 'ソ線', color: '#3B6FE2'},
-  {id: 'D', midi: 62, label: 'レ線', color: '#E28B3B'},
-  {id: 'A', midi: 69, label: 'ラ線', color: '#E23B3B'},
-  {id: 'E', midi: 76, label: 'ミ線', color: '#2FA84F'}
+  {id: 'G', midi: 55, label: 'ソ線', color: '#3B6FE2', colorDark: '#7FA6F5'},
+  {id: 'D', midi: 62, label: 'レ線', color: '#E28B3B', colorDark: '#F0A868'},
+  {id: 'A', midi: 69, label: 'ラ線', color: '#E23B3B', colorDark: '#F07272'},
+  {id: 'E', midi: 76, label: 'ミ線', color: '#2FA84F', colorDark: '#63C97E'}
 ];
+
+const STRING_BY_ID = new Map(STRINGS.map(string => [string.id, string]));
+
+export function stringColor(stringId, theme) {
+  const string = STRING_BY_ID.get(stringId);
+  if (!string) return null;
+  return theme === 'dark' ? string.colorDark : string.color;
+}
+
 
 export const KEYS = {
   A: {jp: 'イ長調', de: 'A-dur', sharps: 3},

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { LEVELS } from '../js/phrase.js';
+import { LEVELS, levelStrings } from '../js/phrase.js';
 import { CLEF_PATH, renderStaff } from '../js/staff.js';
 import { STRINGS, fingering, midiToStaff } from '../js/theory.js';
 
@@ -419,7 +419,7 @@ function assertHorizontalContract(svg, key, label) {
 function midisForLevel(level, key) {
   const config = LEVELS[level];
   const byId = new Map(STRINGS.map((string) => [string.id, string]));
-  return [...new Set(config.strings.flatMap((stringId) => (
+  return [...new Set(levelStrings(level).flatMap((stringId) => (
     fingering(byId.get(stringId).midi, key)
       .filter(({ finger }) => finger <= config.maxFinger)
       .map(({ midi }) => midi)
@@ -845,4 +845,115 @@ test('SVGは外部参照とscriptを含まず、タグの対応が取れてい�
   assert.match(svg, /^<svg\b[^>]*width="100%"/);
   assert.equal(rootAttributes(svg).height, undefined);
   assertWellFormed(svg);
+});
+
+const MARKED_NOTES = [
+  { midi: 69, stringId: 'A', finger: 0, state: 'current', hint: null },
+  { midi: 71, stringId: 'A', finger: 1, state: 'todo', hint: null },
+  { midi: 81, stringId: 'E', finger: 3, state: 'done', hint: null },
+  { midi: 55, stringId: 'G', finger: 0, state: 'todo', hint: null },
+];
+
+test('marks=bothは弦の色と指番号を出し、marks未指定は元の見た目を変えない', () => {
+  const both = renderStaff({ key: 'A', notes: MARKED_NOTES, width: WIDTH, theme: 'light', marks: 'both' });
+  const fingers = elements(both, 'finger');
+
+  assert.equal(rootAttributes(both)['data-marks'], 'both');
+  assert.deepEqual(fingers.map((item) => item.attrs['data-finger']), ['0', '1', '3', '0']);
+  assert.deepEqual(fingers.map((item) => item.attrs['data-string']), ['A', 'A', 'E', 'G']);
+  assert.deepEqual(
+    elements(both, 'notehead').map((item) => item.attrs.fill),
+    ['#E23B3B', '#E23B3B', '#2FA84F', '#3B6FE2'],
+  );
+  // 棒と加線も同じ弦の色で描き、1音が2色に割れないようにする。
+  assert.deepEqual(
+    elements(both, 'stem').map((item) => item.attrs.stroke),
+    ['#E23B3B', '#E23B3B', '#2FA84F', '#3B6FE2'],
+  );
+
+  const color = renderStaff({ key: 'A', notes: MARKED_NOTES, width: WIDTH, theme: 'light', marks: 'color' });
+  assert.equal(elements(color, 'finger').length, 0);
+  assert.deepEqual(
+    elements(color, 'notehead').map((item) => item.attrs.fill),
+    ['#E23B3B', '#E23B3B', '#2FA84F', '#3B6FE2'],
+  );
+
+  const off = renderStaff({ key: 'A', notes: MARKED_NOTES, width: WIDTH, theme: 'light' });
+  assert.equal(rootAttributes(off)['data-marks'], 'off');
+  assert.equal(elements(off, 'finger').length, 0);
+  assert.deepEqual(
+    elements(off, 'notehead').map((item) => item.attrs.fill),
+    ['#252A2E', '#252A2E', '#557763', '#252A2E'],
+  );
+});
+
+test('弦の色はテーマで切り替わり、外した音だけは弦の色を使わない', () => {
+  const dark = renderStaff({ key: 'A', notes: MARKED_NOTES, width: WIDTH, theme: 'dark', marks: 'both' });
+  assert.deepEqual(
+    elements(dark, 'notehead').map((item) => item.attrs.fill),
+    ['#F07272', '#F07272', '#63C97E', '#7FA6F5'],
+  );
+
+  const missed = MARKED_NOTES.map((note, index) => (
+    index === 2 ? { ...note, state: 'miss' } : note
+  ));
+  const light = renderStaff({ key: 'A', notes: missed, width: WIDTH, theme: 'light', marks: 'both' });
+  // ミ線の緑と「外した」の色が同じ意味に見えないよう、missだけはテーマの色に戻す。
+  assert.equal(elements(light, 'notehead')[2].attrs.fill, '#A36F48');
+  assert.equal(elements(light, 'finger')[2].attrs.fill, '#A36F48');
+});
+
+test('指番号は五線の外へ出て、その音符より上でviewBoxに収まる', () => {
+  for (const key of ['C', 'G', 'D', 'A']) {
+    for (const level of Object.keys(LEVELS).map(Number)) {
+      const stringIds = levelStrings(level);
+      for (const midis of fourNoteRotations(midisForLevel(level, key))) {
+        const notes = midis.map((midi, index) => ({
+          midi,
+          stringId: stringIds[index % stringIds.length],
+          finger: index % 5,
+          state: 'todo',
+          hint: null,
+        }));
+        const svg = renderStaff({ key, notes, width: WIDTH, theme: 'light', marks: 'both' });
+        const fingers = elements(svg, 'finger');
+        const heads = elements(svg, 'notehead');
+        const staffTop = Number(rootAttributes(svg)['data-staff-top']);
+        const where = `${key}・レベル${level}`;
+
+        assert.equal(fingers.length, 4, `${where}: 4音ぶんの指番号`);
+        fingers.forEach((finger, index) => {
+          const baseline = Number(finger.attrs.y);
+          const fontSize = Number(finger.attrs['font-size']);
+          assert.ok(baseline < staffTop, `${where}: 指番号が五線の中へ入らない`);
+          assert.ok(
+            baseline < Number(heads[index].attrs['data-y']),
+            `${where}: 指番号はその音符より上`,
+          );
+          assert.ok(baseline - fontSize * 0.82 >= 0, `${where}: 指番号がviewBoxの上へはみ出さない`);
+        });
+      }
+    }
+  }
+});
+
+test('五線に収まる音だけのフレーズでは指番号の高さが揃い、飛び出た音だけ持ち上がる', () => {
+  const inside = [64, 65, 67, 69].map((midi, index) => ({
+    midi, stringId: 'D', finger: index, state: 'todo', hint: null,
+  }));
+  const flat = elements(
+    renderStaff({ key: 'C', notes: inside, width: WIDTH, theme: 'light', marks: 'both' }),
+    'finger',
+  ).map((item) => item.attrs.y);
+  assert.equal(new Set(flat).size, 1, '五線の中の音は同じ高さに揃う');
+
+  const withHigh = [...inside.slice(0, 3), {
+    midi: 84, stringId: 'E', finger: 4, state: 'todo', hint: null,
+  }];
+  const raised = elements(
+    renderStaff({ key: 'C', notes: withHigh, width: WIDTH, theme: 'light', marks: 'both' }),
+    'finger',
+  ).map((item) => Number(item.attrs.y));
+  assert.equal(new Set(raised.slice(0, 3)).size, 1, '低い3音はそのまま揃う');
+  assert.ok(raised[3] < raised[0], '上加線へ飛び出た音の指番号だけ持ち上がる');
 });

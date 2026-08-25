@@ -27,16 +27,22 @@ export function keySignature(key)
 
 ## js/phrase.js
 ```js
+export const ALL_STRING_IDS = ['G','D','A','E'];
 export const LEVELS = {
-  1:{label:'ラ線だけ',   strings:['A'],             maxFinger:3},
-  2:{label:'ミ線だけ',   strings:['E'],             maxFinger:3},
-  3:{label:'ラ線とミ線', strings:['A','E'],         maxFinger:3},
-  4:{label:'レ線とソ線', strings:['D','G'],         maxFinger:3},
-  5:{label:'4本ぜんぶ',  strings:['G','D','A','E'], maxFinger:3},
-  6:{label:'4の指まで',  strings:['G','D','A','E'], maxFinger:4}
+  1:{label:'ミ線だけ',   strings:['E'],             maxFinger:3},
+  2:{label:'ラ線だけ',   strings:['A'],             maxFinger:3},
+  3:{label:'レ線だけ',   strings:['D'],             maxFinger:3},
+  4:{label:'ソ線だけ',   strings:['G'],             maxFinger:3},
+  5:{label:'選んだ2本',  strings:null, choose:{min:2,max:2}, preset:['A','E'],  maxFinger:3},
+  6:{label:'選んだ弦で4の指まで', strings:null, choose:{min:1,max:4}, preset:['A'], maxFinger:4},
+  7:{label:'4本ぜんぶ',  strings:['G','D','A','E'], maxFinger:3},
+  8:{label:'4本ぜんぶ・4の指まで', strings:['G','D','A','E'], maxFinger:4}
 };
-export function makePhrase({level, key, length=4, prev=null, rng=Math.random})
-// → {notes:[{midi, stringId, finger}], key, level}
+// strings が null のレベルだけ、画面で選んだ弦を受け取る。本数が choose に合わなければ preset。
+export function levelStrings(level, picked=null) // → ['G','D',...]（必ずALL_STRING_IDSの順）
+export function canChooseStrings(level)         // → boolean
+export function makePhrase({level, key, length=4, prev=null, rng=Math.random, strings=null})
+// → {notes:[{midi, stringId, finger}], key, level, strings}
 // ルール（テストで機械検証する）:
 //  - 隣り合う音は原則2度（順次進行）。跳躍（3度以上）は1フレーズに最大1回、最大4度まで。
 //  - 最後の音は安定音（その調の主音・第3音・第5音のいずれかの音名）。
@@ -76,9 +82,12 @@ export function judgeNote({freq, targetMidi, candidates, cfg, a4})
 
 ## js/staff.js（document を使わない・実装済み）
 ```js
-export function renderStaff({key, notes, width, theme})
-// notes = [{midi, state:'done'|'current'|'todo'|'miss', hint:{stringId,finger,nameJa}|null}]
+export function renderStaff({key, notes, width, theme, marks})
+// notes = [{midi, stringId, finger, state:'done'|'current'|'todo'|'miss', hint:{stringId,finger,nameJa}|null}]
+// marks = 'both'（弦の色＋指番号）| 'color'（弦の色だけ）| 'off'（既定。五線だけ）
 // → SVG文字列。五線・ト音記号（自前パス）・調号・音符・符幹・加線・臨時記号・状態の描き分け。
+// 指番号は data-role="finger"。五線の上端より上に置き、上加線へ出た音だけ自分の加線ぶん持ち上げる。
+// state='miss' のときだけ弦の色を使わない（ミ線の緑と合否の緑を混ぜない）。
 export const CLEF_PATH
 ```
 

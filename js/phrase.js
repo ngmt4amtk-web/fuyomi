@@ -1,13 +1,41 @@
 import {KEYS, STRINGS, fingering, midiToStaff} from './theory.js';
 
+// 低い弦から高い弦へ。画面の並びと配列の順序をここで一本化する。
+export const ALL_STRING_IDS = Object.freeze(['G', 'D', 'A', 'E']);
+
+/*
+ * 1〜4は弦を1本ずつ、高いほうから降りて覚える（ミ→ラ→レ→ソ）。
+ * 5と6は弦をその場で選ぶレベルなので strings は null にし、choose に選べる本数を書く。
+ * choose を持つレベルへ弦を渡さなかった場合は preset を使う。
+ */
 export const LEVELS = {
-  1: {label: 'ラ線だけ', strings: ['A'], maxFinger: 3},
-  2: {label: 'ミ線だけ', strings: ['E'], maxFinger: 3},
-  3: {label: 'ラ線とミ線', strings: ['A', 'E'], maxFinger: 3},
-  4: {label: 'レ線とソ線', strings: ['D', 'G'], maxFinger: 3},
-  5: {label: '4本ぜんぶ', strings: ['G', 'D', 'A', 'E'], maxFinger: 3},
-  6: {label: '4の指まで', strings: ['G', 'D', 'A', 'E'], maxFinger: 4}
+  1: {label: 'ミ線だけ', strings: ['E'], maxFinger: 3},
+  2: {label: 'ラ線だけ', strings: ['A'], maxFinger: 3},
+  3: {label: 'レ線だけ', strings: ['D'], maxFinger: 3},
+  4: {label: 'ソ線だけ', strings: ['G'], maxFinger: 3},
+  5: {label: '選んだ2本', strings: null, choose: {min: 2, max: 2}, preset: ['A', 'E'], maxFinger: 3},
+  6: {label: '選んだ弦で4の指まで', strings: null, choose: {min: 1, max: 4}, preset: ['A'], maxFinger: 4},
+  7: {label: '4本ぜんぶ', strings: ['G', 'D', 'A', 'E'], maxFinger: 3},
+  8: {label: '4本ぜんぶ・4の指まで', strings: ['G', 'D', 'A', 'E'], maxFinger: 4}
 };
+
+/**
+ * レベルと「選んだ弦」から、実際に出題へ使う弦を決める。
+ * 弦を選べないレベルでは選択を無視し、選べるレベルでは本数が合わない選択も無視して preset へ落とす。
+ */
+export function levelStrings(level, picked = null) {
+  const levelConfig = LEVELS[level];
+  if (!levelConfig) throw new RangeError(`未対応のlevelです: ${level}`);
+  if (levelConfig.strings) return [...levelConfig.strings];
+
+  const chosen = ALL_STRING_IDS.filter(id => Array.isArray(picked) && picked.includes(id));
+  const {min, max} = levelConfig.choose;
+  return chosen.length >= min && chosen.length <= max ? chosen : [...levelConfig.preset];
+}
+
+export function canChooseStrings(level) {
+  return Boolean(LEVELS[level] && !LEVELS[level].strings);
+}
 
 const TONIC_PITCH_CLASS = {C: 0, G: 7, D: 2, A: 9};
 const STABLE_INTERVALS = new Set([0, 4, 7]);
@@ -182,7 +210,7 @@ function addFingerings(tones) {
   return notes;
 }
 
-export function makePhrase({level, key, length = 4, prev = null, rng = Math.random}) {
+export function makePhrase({level, key, length = 4, prev = null, rng = Math.random, strings = null}) {
   const levelConfig = LEVELS[level];
   if (!levelConfig) throw new RangeError(`未対応のlevelです: ${level}`);
   if (!KEYS[key]) throw new RangeError(`未対応のkeyです: ${key}`);
@@ -191,17 +219,18 @@ export function makePhrase({level, key, length = 4, prev = null, rng = Math.rand
   }
   if (typeof rng !== 'function') throw new TypeError('rngは関数で指定してください');
 
-  const tones = makeToneSet(levelConfig, key);
+  const stringIds = levelStrings(level, strings);
+  const tones = makeToneSet({...levelConfig, strings: stringIds}, key);
   const cadences = makeCadences(tones, key);
   const prevMidis = previousMidis(prev);
 
   for (let attempt = 0; attempt < RANDOM_ATTEMPTS; attempt++) {
     const sequence = randomToneSequence(tones, cadences, length, rng);
     if (!sameMidis(sequence, prevMidis)) {
-      return {notes: addFingerings(sequence), key, level};
+      return {notes: addFingerings(sequence), key, level, strings: stringIds};
     }
   }
 
   const fallback = deterministicFallback(cadences, length, prevMidis);
-  return {notes: addFingerings(fallback), key, level};
+  return {notes: addFingerings(fallback), key, level, strings: stringIds};
 }

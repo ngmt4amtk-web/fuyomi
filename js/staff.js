@@ -1,4 +1,4 @@
-import { keySignature, midiToStaff } from './theory.js';
+import { keySignature, midiToStaff, stringColor } from './theory.js';
 
 // 出典: Bravura 1.204 (Steinberg Media Technologies GmbH), SIL OFL 1.1。UPM 1000 の輪郭を x'=4x/1000, y'=-4y/1000 で五線間隔座標へ変換した。
 export const CLEF_PATH = [
@@ -100,6 +100,8 @@ const STRING_LABELS = {
 };
 
 const VALID_STATES = new Set(['todo', 'current', 'done', 'miss']);
+// 弦の色と指番号をどこまで出すか。'off' は五線だけを読ませる元の見た目。
+const VALID_MARKS = new Set(['both', 'color', 'off']);
 
 const CLEF_METRICS = { left: 0, top: -4.392, right: 2.684, bottom: 2.632 };
 const NOTEHEAD_METRICS = {
@@ -122,6 +124,11 @@ const ACCIDENTAL_METRICS = {
 const NOTE_ACCIDENTAL_OFFSET = 1.72;
 const CURRENT_HIGHLIGHT_HALF_WIDTH = 2.55 / 2;
 const HINT_FONT_SIZE = 0.86;
+const FINGER_FONT_SIZE = 0.95;
+// 音符のいちばん高い描画物から指番号のベースラインまでの隙間（線間単位）。
+const FINGER_GAP = 0.52;
+// 数字の高さの見積もり。実フォントのcap heightより広く取り、上端が切れないようにする。
+const FINGER_CAP_HEIGHT = FINGER_FONT_SIZE * 0.82;
 const STANDARD_NOTE_SLOTS = 4;
 // SVG座標を小数化しても規定の最小値を割らないための線間単位の安全幅。
 const HORIZONTAL_ROUNDING_GUARD = 0.01;
@@ -149,11 +156,22 @@ function escapeXml(value) {
     .replaceAll("'", '&apos;');
 }
 
-function noteAppearance(state, palette) {
-  if (state === 'done') return { ink: palette.done, opacity: 1 };
+/*
+ * 弦の色を使うときは、色相が「どの弦か」を、濃さが「どこまで進んだか」を担う。
+ * ただし外した直後だけは弦の色をやめる。ミ線の緑と合格の緑が同じ意味に見えるのを避ける。
+ */
+function noteAppearance(state, palette, stringInk) {
+  if (!stringInk) {
+    if (state === 'done') return { ink: palette.done, opacity: 1 };
+    if (state === 'miss') return { ink: palette.miss, opacity: 0.92 };
+    if (state === 'current') return { ink: palette.foreground, opacity: 1 };
+    return { ink: palette.foreground, opacity: 0.55 };
+  }
+
+  if (state === 'done') return { ink: stringInk, opacity: 0.82 };
   if (state === 'miss') return { ink: palette.miss, opacity: 0.92 };
-  if (state === 'current') return { ink: palette.foreground, opacity: 1 };
-  return { ink: palette.foreground, opacity: 0.55 };
+  if (state === 'current') return { ink: stringInk, opacity: 1 };
+  return { ink: stringInk, opacity: 0.42 };
 }
 
 function accidentalPath(accidental) {
@@ -283,15 +301,18 @@ function horizontalLayout(signatureItems, plottedNotes) {
 
 /**
  * ト音記号つきの五線譜を、DOMへ触れずSVG文字列として返す。
- * @param {{key:string, notes:Array, width:number, theme:'light'|'dark'}} options
+ * @param {{key:string, notes:Array, width:number, theme:'light'|'dark', marks:'both'|'color'|'off'}} options
  * @returns {string}
  */
-export function renderStaff({ key, notes, width, theme } = {}) {
+export function renderStaff({ key, notes, width, theme, marks } = {}) {
   const logicalWidth = Number.isFinite(Number(width)) && Number(width) > 0
     ? Number(width)
     : 400;
   const palette = THEMES[theme] || THEMES.light;
   const selectedTheme = theme === 'dark' ? 'dark' : 'light';
+  const selectedMarks = VALID_MARKS.has(marks) ? marks : 'off';
+  const colorByString = selectedMarks !== 'off';
+  const showFinger = selectedMarks === 'both';
   const sourceNotes = Array.isArray(notes) ? notes : [];
   const signature = keySignature(key);
   const signatureItems = Array.isArray(signature) ? signature : [];
@@ -299,7 +320,8 @@ export function renderStaff({ key, notes, width, theme } = {}) {
   const plottedNotes = sourceNotes.map((note, index) => {
     const staffNote = midiToStaff(note.midi, key);
     const state = VALID_STATES.has(note.state) ? note.state : 'todo';
-    return { note, index, staffNote, state };
+    const stringInk = colorByString ? stringColor(note.stringId, selectedTheme) : null;
+    return { note, index, staffNote, state, stringInk };
   });
   const layout = horizontalLayout(signatureItems, plottedNotes);
   // 横の必要量を線間単位で先に確定するため、左の記号が太っても4音の取り分を侵食しない。
@@ -316,23 +338,24 @@ export function renderStaff({ key, notes, width, theme } = {}) {
     contentBottom = Math.max(contentBottom, y + metrics.bottom);
   }
 
-  for (const { staffNote } of plottedNotes) {
+  for (const entry of plottedNotes) {
+    const { staffNote } = entry;
     const y = 4 - staffNote.diatonic / 2;
-    contentTop = Math.min(contentTop, y + NOTEHEAD_METRICS.top);
+    let noteTop = y + NOTEHEAD_METRICS.top;
+    // 指番号は符頭の中心線上に置くので、真上にある符頭と加線だけをよける。
+    // 棒は符頭の右端から伸びるため、数字とは横にずれていて当たらない。
+    let fingerAnchor = noteTop;
     contentBottom = Math.max(contentBottom, y + NOTEHEAD_METRICS.bottom);
 
     if (staffNote.diatonic < 4) {
-      contentTop = Math.min(contentTop, y - STEM_LENGTH - STEM_STROKE_WIDTH / 2);
+      noteTop = Math.min(noteTop, y - STEM_LENGTH - STEM_STROKE_WIDTH / 2);
     } else {
       contentBottom = Math.max(contentBottom, y + STEM_LENGTH + STEM_STROKE_WIDTH / 2);
     }
 
     const accidentalMetrics = ACCIDENTAL_METRICS[staffNote.accidental];
     if (accidentalMetrics) {
-      contentTop = Math.min(
-        contentTop,
-        y + accidentalMetrics.top,
-      );
+      noteTop = Math.min(noteTop, y + accidentalMetrics.top);
       contentBottom = Math.max(
         contentBottom,
         y + accidentalMetrics.bottom,
@@ -341,8 +364,25 @@ export function renderStaff({ key, notes, width, theme } = {}) {
 
     for (const ledger of ledgerDiatonics(staffNote.diatonic)) {
       const ledgerY = 4 - ledger / 2;
-      contentTop = Math.min(contentTop, ledgerY - LINE_STROKE_WIDTH / 2);
+      noteTop = Math.min(noteTop, ledgerY - LINE_STROKE_WIDTH / 2);
+      fingerAnchor = Math.min(fingerAnchor, ledgerY - LINE_STROKE_WIDTH / 2);
       contentBottom = Math.max(contentBottom, ledgerY + LINE_STROKE_WIDTH / 2);
+    }
+
+    entry.fingerAnchor = fingerAnchor;
+    contentTop = Math.min(contentTop, noteTop);
+  }
+
+  if (showFinger) {
+    for (const entry of plottedNotes) {
+      if (!Number.isInteger(entry.note.finger)) continue;
+      /*
+       * 五線の上端（0）より上を最低線にする。音符の上端だけで決めると、五線の中に
+       * ある音の数字が線と重なってどちらも読めなくなる。低い音はここで一列に揃い、
+       * 上加線へ飛び出た音だけが自分の加線のぶんだけ持ち上がる。
+       */
+      entry.fingerLine = Math.min(entry.fingerAnchor, 0) - FINGER_GAP;
+      contentTop = Math.min(contentTop, entry.fingerLine - FINGER_CAP_HEIGHT);
     }
   }
 
@@ -394,11 +434,11 @@ export function renderStaff({ key, notes, width, theme } = {}) {
     });
   }).join('');
 
-  const renderedNotes = plottedNotes.map(({ note, index, staffNote, state }) => {
+  const renderedNotes = plottedNotes.map(({ note, index, staffNote, state, stringInk, fingerLine }) => {
     const x = layout.noteXs[index] * staffSpace;
     const y = yForDiatonic(staffNote.diatonic);
     const direction = staffNote.diatonic < 4 ? 'up' : 'down';
-    const appearance = noteAppearance(state, palette);
+    const appearance = noteAppearance(state, palette, stringInk);
     const noteheadLeftX = x - staffSpace * NOTEHEAD_METRICS.right / 2;
     const stemAnchor = direction === 'up'
       ? NOTEHEAD_METRICS.stemUp
@@ -432,19 +472,25 @@ export function renderStaff({ key, notes, width, theme } = {}) {
       ? `<text data-role="hint" data-note-index="${index}" x="${number(x)}" y="${number(hintY)}" text-anchor="middle" fill="${appearance.ink}" opacity="0.84" font-family="-apple-system, BlinkMacSystemFont, 'Hiragino Sans', sans-serif" font-size="${number(staffSpace * 0.86)}" font-weight="500">${escapeXml(label)}</text>`
       : '';
 
+    const fingerY = fingerLine == null ? null : staffTop + fingerLine * staffSpace;
+    const fingerMark = fingerY != null && Number.isInteger(note.finger)
+      ? `<text data-role="finger" data-note-index="${index}" data-finger="${note.finger}" data-string="${escapeXml(note.stringId ?? '')}" x="${number(x)}" y="${number(fingerY)}" text-anchor="middle" fill="${appearance.ink}" font-family="-apple-system, BlinkMacSystemFont, 'Hiragino Sans', sans-serif" font-size="${number(staffSpace * FINGER_FONT_SIZE)}" font-weight="700">${escapeXml(note.finger)}</text>`
+      : '';
+
     return [
-      `<g data-role="note" data-index="${index}" data-midi="${escapeXml(note.midi)}" data-diatonic="${staffNote.diatonic}" data-state="${state}" data-x="${number(x)}" data-y="${number(y)}" data-ink="${appearance.ink}" opacity="${appearance.opacity}">`,
+      `<g data-role="note" data-index="${index}" data-midi="${escapeXml(note.midi)}" data-diatonic="${staffNote.diatonic}" data-state="${state}" data-string="${escapeXml(note.stringId ?? '')}" data-x="${number(x)}" data-y="${number(y)}" data-ink="${appearance.ink}" opacity="${appearance.opacity}">`,
       ledgers,
       noteAccidental,
       `<path data-role="notehead" data-note-index="${index}" data-x="${number(x)}" data-y="${number(y)}" d="${NOTEHEAD_PATH}" transform="translate(${number(noteheadLeftX)} ${number(y)}) scale(${number(staffSpace)})" fill="${appearance.ink}"/>`,
       `<path data-role="stem" data-note-index="${index}" data-direction="${direction}" data-y-start="${number(stemStartY)}" data-y-end="${number(stemEndY)}" d="M ${number(stemX)} ${number(stemStartY)} V ${number(stemEndY)}" fill="none" stroke="${appearance.ink}" stroke-width="${number(staffSpace * STEM_STROKE_WIDTH)}" stroke-linecap="round"/>`,
+      fingerMark,
       hint,
       '</g>',
     ].join('');
   }).join('');
 
   return [
-    `<svg width="100%" viewBox="0 0 ${number(logicalWidth)} ${number(logicalHeight)}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="ト音記号の五線譜" data-theme="${selectedTheme}" data-staff-space="${number(staffSpace)}" data-staff-top="${number(staffTop)}" data-staff-bottom="${number(staffBottom)}" data-layout-need="${number(layout.need)}" data-note-step="${number(layout.noteStep * staffSpace)}">`,
+    `<svg width="100%" viewBox="0 0 ${number(logicalWidth)} ${number(logicalHeight)}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="ト音記号の五線譜" data-theme="${selectedTheme}" data-marks="${selectedMarks}" data-staff-space="${number(staffSpace)}" data-staff-top="${number(staffTop)}" data-staff-bottom="${number(staffBottom)}" data-layout-need="${number(layout.need)}" data-note-step="${number(layout.noteStep * staffSpace)}">`,
     highlights,
     staffLines,
     clef,

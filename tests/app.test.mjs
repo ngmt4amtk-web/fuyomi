@@ -7,6 +7,8 @@ import {mtof} from '../js/theory.js';
 const ELEMENT_IDS = [
   'setup-screen', 'check-screen', 'practice-screen', 'result-screen', 'settings-form',
   'level-select', 'key-select', 'count-select', 'hint-select', 'sound-select',
+  'marks-select', 'strings-field', 'strings-note', 'string-legend', 'string-chip-G',
+  'string-chip-D', 'string-chip-A', 'string-chip-E',
   'tolerance-select', 'a4-select', 'level-description', 'teacher-notice', 'check-status',
   'check-guidance', 'without-mic-button', 'check-cancel-button', 'practice-count',
   'practice-key', 'manual-notice', 'staff-wrap', 'note-count', 'hold-track', 'hold-fill',
@@ -225,6 +227,7 @@ function createHarness({
   let detection = SILENT;
   let microphoneClosed = false;
   let phraseCalls = 0;
+  const phraseArgs = [];
   const mic = {
     read:() => detection,
     sampleRate:48000,
@@ -264,10 +267,11 @@ function createHarness({
       create:createMicrophone || (async () => mic),
       detect:(sample) => sample,
     },
-    makePhrase({level, key}){
+    makePhrase({level, key, strings}){
       const source = phrases[Math.min(phraseCalls, phrases.length - 1)];
       phraseCalls += 1;
-      return {level, key, notes:source.map(value => ({...value}))};
+      phraseArgs.push({level, key, strings});
+      return {level, key, strings, notes:source.map(value => ({...value}))};
     },
     ...(judgeNote ? {judgeNote} : {}),
   });
@@ -280,7 +284,13 @@ function createHarness({
     setDetection(value){ detection = value; },
     get microphoneClosed(){ return microphoneClosed; },
     get phraseCalls(){ return phraseCalls; },
+    get phraseArgs(){ return phraseArgs; },
   };
+}
+
+function pressedStrings(document){
+  return ['G', 'D', 'A', 'E'].filter(id =>
+    document.getElementById(`string-chip-${id}`).getAttribute('aria-pressed') === 'true');
 }
 
 function configure(harness, {level = 1, sound = 'off'} = {}){
@@ -486,4 +496,50 @@ test('H: judgeNote が不合格時の heard 契約を破ったら既定候補で
 
   assert.equal(harness.document.getElementById('manual-notice').hidden, false);
   assert.match(harness.document.getElementById('practice-status').textContent, /自分で進むモードへ切り替えました/);
+});
+
+test('I: 弦を選ぶレベルでは、押した弦が画面と出題の両方へ届く', async () => {
+  const harness = createHarness();
+  const document = harness.document;
+  const form = document.getElementById('settings-form');
+  const field = document.getElementById('strings-field');
+
+  assert.equal(field.hidden, true, 'レベル1では弦を選ばせない');
+
+  document.getElementById('level-select').value = '5';
+  form.dispatch('change');
+  assert.equal(field.hidden, false);
+  assert.deepEqual(pressedStrings(document), ['A', 'E'], 'レベル5の既定はラ線とミ線');
+
+  // 3本目を押すと、先に選んだ弦から外れて必ず2本に保たれる。
+  document.getElementById('string-chip-G').click();
+  assert.deepEqual(pressedStrings(document), ['G', 'E']);
+  // 2本を割る操作は受け付けない。
+  document.getElementById('string-chip-G').click();
+  assert.deepEqual(pressedStrings(document), ['G', 'E']);
+
+  await startMicPractice(harness, {level:5});
+  assert.deepEqual(harness.phraseArgs.at(-1).strings, ['G', 'E']);
+
+  const legend = document.getElementById('string-legend');
+  assert.equal(legend.hidden, false);
+  assert.deepEqual(legend.children.map(item => item.textContent), ['● ソ線', '● ミ線']);
+});
+
+test('I: 弦を選べないレベルではチップを隠し、選択を出題へ持ち込まない', async () => {
+  const harness = createHarness();
+  const document = harness.document;
+  const form = document.getElementById('settings-form');
+
+  document.getElementById('level-select').value = '6';
+  form.dispatch('change');
+  document.getElementById('string-chip-E').click();
+  assert.deepEqual(pressedStrings(document), ['A', 'E']);
+
+  document.getElementById('level-select').value = '8';
+  form.dispatch('change');
+  assert.equal(document.getElementById('strings-field').hidden, true);
+
+  await startMicPractice(harness, {level:8});
+  assert.deepEqual(harness.phraseArgs.at(-1).strings, ['A', 'E'], '選択は保つが出題側が無視する');
 });
