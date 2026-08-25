@@ -58,6 +58,8 @@
 - 結果に出すのは観測した事実だけ。自動診断、音程点、「レベル合格」は出さない。
 - `?level=3&key=A&hint=off&n=5&marks=color&strings=DA` のようなURLで、講師が条件を固定できる。`strings` は弦を選べるレベル（5・6）でだけ効く。
 - 設定と初回説明の確認状態は、`localStorage` の `fuyomi` に保存する。
+- 公開は `gh-pages` ブランチが GitHub Pages のソース。`main` へ push しただけでは反映されないので、
+  `git push origin main:gh-pages` まで打つ。
 
 ## 検証済みと未検証
 
