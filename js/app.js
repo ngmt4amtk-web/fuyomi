@@ -76,7 +76,7 @@ const VALID_MARKS = new Set(['both', 'color', 'off']);
  * 音程の良し悪しは言わない（採用8）。言っているのは「読めていた」ことだけ。
  * 記録の本数で選ぶので、乱数を使わずに変化し、テストからも決まった順に見える。
  */
-const PASS_WORDS = ['ばっちり。', 'いい感じ。', 'そう、それ。', 'その音。'];
+const PASS_WORDS = ['ばっちり。', 'いい感じ。', 'その音。'];
 const VALID_A4 = new Set([440, 442, 443]);
 const STRING_BY_ID = new Map(STRINGS.map((string) => [string.id, string]));
 const TONIC_MIDI = { C: 60, G: 67, D: 62, A: 69 };
