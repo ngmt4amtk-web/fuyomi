@@ -262,10 +262,42 @@ h2 {
   font-weight: 650;
 }
 
+/* 調は名前だけでは選べない。譜面に並ぶ♯の数を、選ぶ手がかりとして添える。 */
+.stacked-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  padding: 7px 4px;
+  line-height: 1.25;
+}
+
+.stacked-chip small {
+  font-size: 0.74rem;
+  font-weight: 600;
+  opacity: 0.72;
+}
+
 .option-chip[aria-pressed="true"] {
   border-color: var(--accent);
   background: var(--accent);
   color: #fff;
+}
+
+.key-preview {
+  width: min(100%, 250px);
+  margin: 10px 0 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-medium);
+  background: var(--surface-raised);
+  overflow: hidden;
+}
+
+.key-preview svg {
+  display: block;
+  width: 100%;
+  height: auto;
 }
 
 .chip-note {

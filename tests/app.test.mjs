@@ -411,7 +411,8 @@ test('C: 合格後に同じA4を伸ばし続けても、無音までは次のA4�
   assert.equal(harness.document.getElementById('practice-status').textContent, '次の音を弾きます。');
   armWithSilence(harness);
   holdMidi(harness, 69);
-  assert.equal(harness.document.getElementById('practice-status').textContent, '聞こえたよ。');
+  // 2音目の合格。合格の言葉は記録の本数で順に回るので、ここは2つ目になる。
+  assert.equal(harness.document.getElementById('practice-status').textContent, 'いい感じ。');
 });
 
 test('D: 手動モード開始後に届いたマイク失敗は練習開始を二重予約しない', async () => {

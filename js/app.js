@@ -71,6 +71,12 @@ const DEFAULTS = Object.freeze({
 });
 const VALID_COUNTS = new Set([3, 5, 10]);
 const VALID_MARKS = new Set(['both', 'color', 'off']);
+/*
+ * 合格したときの言葉。同じ文が続くと飽きるので順に回す。
+ * 音程の良し悪しは言わない（採用8）。言っているのは「読めていた」ことだけ。
+ * 記録の本数で選ぶので、乱数を使わずに変化し、テストからも決まった順に見える。
+ */
+const PASS_WORDS = ['ばっちり。', 'いい感じ。', 'そう、それ。', 'その音。'];
 const VALID_A4 = new Set([440, 442, 443]);
 const STRING_BY_ID = new Map(STRINGS.map((string) => [string.id, string]));
 const TONIC_MIDI = { C: 60, G: 67, D: 62, A: 69 };
@@ -93,6 +99,7 @@ const elements = {
   toleranceSelect: byId('tolerance-select'),
   a4Select: byId('a4-select'),
   levelDescription: byId('level-description'),
+  keyPreview: byId('key-preview'),
   teacherNotice: byId('teacher-notice'),
   checkStatus: byId('check-status'),
   checkGuidance: byId('check-guidance'),
@@ -255,7 +262,8 @@ function queryOverrides() {
   const strings = normalizedStrings([...(params.get('strings') || '').toUpperCase()]);
   if (strings) overrides.strings = strings;
 
-  return { overrides, locked, hasQuery: window.location.search.length > 1 };
+  // cb= のような無関係なクエリでは「先生の指定」と言わない。効いた指定があるときだけ。
+  return { overrides, locked, hasQuery: locked.size > 0 || Boolean(overrides.strings) };
 }
 
 const stored = readStorage();
@@ -342,6 +350,7 @@ function populateSettings(settings) {
   });
   elements.teacherNotice.hidden = !query.hasQuery;
   renderOptionChips();
+  renderKeyPreview();
   syncPickedStrings();
   renderStringChoice();
   updateLevelDescription();
@@ -362,6 +371,20 @@ function syncPickedStrings() {
   pickedStrings = levelStrings(level, pickedStrings);
 }
 
+/*
+ * 調は名前だけでは選べない。選ぶとその調号が譜面と同じ字形で出るようにして、
+ * 「譜面のいちばん左に並ぶ記号」と調の名前をその場で結びつけられるようにする。
+ */
+function renderKeyPreview() {
+  if (!elements.keyPreview) return;
+  elements.keyPreview.innerHTML = renderStaff({
+    key: KEYS[elements.keySelect.value] ? elements.keySelect.value : DEFAULTS.key,
+    notes: [],
+    width: 250,
+    theme: currentTheme(),
+  });
+}
+
 function renderOptionChips() {
   for (const group of CHIP_GROUPS) {
     const select = elements[group.select];
@@ -379,6 +402,7 @@ function pickOption(group, value) {
   if (select.disabled) return;
   select.value = value;
   renderOptionChips();
+  renderKeyPreview();
   syncPickedStrings();
   renderStringChoice();
   updateLevelDescription();
@@ -810,7 +834,9 @@ function passCurrentNote(mode, token = state.sessionId) {
   state.missFlash = false;
   state.holder?.reset();
   updateHoldProgress(0);
-  elements.practiceStatus.textContent = mode === 'mic' ? '聞こえたよ。' : '次の音へ進みます。';
+  elements.practiceStatus.textContent = mode === 'mic'
+    ? PASS_WORDS[(state.records.length - 1) % PASS_WORDS.length]
+    : '次の音へ進みます。';
   renderPractice();
 
   if (state.noteIndex === state.phrase.notes.length - 1) {
@@ -1415,6 +1441,7 @@ elements.settingsForm.addEventListener('submit', (event) => {
 
 elements.settingsForm.addEventListener('change', () => {
   renderOptionChips();
+  renderKeyPreview();
   syncPickedStrings();
   renderStringChoice();
   updateLevelDescription();
@@ -1483,7 +1510,10 @@ resizeObserver.observe(elements.staffWrap);
 
 const handleThemeChange = () => {
   if (!elements.introDialog.hidden) renderIntroStaff();
-  if (state.screen === 'setup') renderStringChoice();
+  if (state.screen === 'setup') {
+    renderStringChoice();
+    renderKeyPreview();
+  }
   if (state.screen === 'practice') renderPractice();
 };
 if (typeof colorScheme.addEventListener === 'function') {

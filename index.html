@@ -48,11 +48,13 @@
               <option value="A">イ長調（A）</option>
             </select>
             <div class="chip-row chip-row-4" role="group" aria-labelledby="key-label">
-              <button id="key-chip-C" class="option-chip" type="button" aria-pressed="false">ハ長調</button>
-              <button id="key-chip-G" class="option-chip" type="button" aria-pressed="false">ト長調</button>
-              <button id="key-chip-D" class="option-chip" type="button" aria-pressed="false">ニ長調</button>
-              <button id="key-chip-A" class="option-chip" type="button" aria-pressed="false">イ長調</button>
+              <button id="key-chip-C" class="option-chip stacked-chip" type="button" aria-pressed="false">ハ長調<small>♯なし</small></button>
+              <button id="key-chip-G" class="option-chip stacked-chip" type="button" aria-pressed="false">ト長調<small>♯1つ</small></button>
+              <button id="key-chip-D" class="option-chip stacked-chip" type="button" aria-pressed="false">ニ長調<small>♯2つ</small></button>
+              <button id="key-chip-A" class="option-chip stacked-chip" type="button" aria-pressed="false">イ長調<small>♯3つ</small></button>
             </div>
+            <div id="key-preview" class="key-preview" aria-hidden="true"></div>
+            <p class="chip-note">譜面のいちばん左に、この記号が並びます。</p>
           </div>
 
           <div class="field">
