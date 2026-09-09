@@ -23,7 +23,7 @@ import {
   stringColor,
 } from './theory.js';
 import { renderStaff as defaultRenderStaff } from './staff.js?v=20260909-2';
-import { COMPANIONS, renderCompanion } from './companion.js?v=20260909-6';
+import { COMPANIONS, renderCompanion } from './companion.js?v=20260909-7';
 
 export function createFuyomiApp(dependencies = {}) {
 const window = dependencies.window ?? globalThis.window;
