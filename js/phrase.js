@@ -3,22 +3,13 @@ import {KEYS, STRINGS, fingering, midiToStaff} from './theory.js';
 // 低い弦から高い弦へ。画面の並びと配列の順序をここで一本化する。
 export const ALL_STRING_IDS = Object.freeze(['G', 'D', 'A', 'E']);
 
-/*
- * 1〜4は弦を1本ずつ、高いほうから降りて覚える（ミ→ラ→レ→ソ）。
- * 5と6は弦をその場で選ぶレベルなので strings は null にし、choose に選べる本数を書く。
- * choose を持つレベルへ弦を渡さなかった場合は preset を使う。
- * min は「上限ちょうど」にしない。レベル5を min2 にしたら選択中の2本がどちらも外せず、
- * 押しても何も起きないボタンになった（2026-08-25 本人の指摘）。既定は2本、外して1本にもできる。
- */
+// 単弦の4段階は1つにまとめ、弦を選ぶ。2本の段階は外して1本にもできる既存仕様を保つ。
 export const LEVELS = {
-  1: {label: 'ミ線だけ', strings: ['E'], maxFinger: 3},
-  2: {label: 'ラ線だけ', strings: ['A'], maxFinger: 3},
-  3: {label: 'レ線だけ', strings: ['D'], maxFinger: 3},
-  4: {label: 'ソ線だけ', strings: ['G'], maxFinger: 3},
-  5: {label: '選んだ2本', strings: null, choose: {min: 1, max: 2}, preset: ['A', 'E'], maxFinger: 3},
-  6: {label: '選んだ弦で4の指まで', strings: null, choose: {min: 1, max: 4}, preset: ['A', 'E'], maxFinger: 4},
-  7: {label: '4本ぜんぶ', strings: ['G', 'D', 'A', 'E'], maxFinger: 3},
-  8: {label: '4本ぜんぶ・4の指まで', strings: ['G', 'D', 'A', 'E'], maxFinger: 4}
+  1: {label: '選んだ1本', strings: null, choose: {min: 1, max: 1}, preset: ['E'], maxFinger: 3},
+  2: {label: '選んだ2本', strings: null, choose: {min: 1, max: 2}, preset: ['A', 'E'], maxFinger: 3},
+  3: {label: '選んだ弦で4の指まで', strings: null, choose: {min: 1, max: 4}, preset: ['A', 'E'], maxFinger: 4},
+  4: {label: '4本ぜんぶ', strings: ['G', 'D', 'A', 'E'], maxFinger: 3},
+  5: {label: '4本ぜんぶ・4の指まで', strings: ['G', 'D', 'A', 'E'], maxFinger: 4}
 };
 
 /**
@@ -227,11 +218,11 @@ export function makePhrase({level, key, length = 4, prev = null, rng = Math.rand
 
   const stringIds = levelStrings(level, strings);
   const tones = makeToneSet({...levelConfig, strings: stringIds}, key);
-  const cadences = makeCadences(tones, key, level >= 5 && stringIds.length > 1);
+  const cadences = makeCadences(tones, key, level >= 2 && stringIds.length > 1);
   const prevMidis = previousMidis(prev);
   const previousStrings = new Set(Array.isArray(prev?.notes) ? prev.notes.map(note => note.stringId) : []);
   // 隣り合わない弦だけを選ぶと、4度以内では渡れない。そこは従来の音程制約を守る。
-  const crossing = level >= 5 && stringIds.some((id, i) =>
+  const crossing = level >= 2 && stringIds.some((id, i) =>
     i > 0 && STRING_ORDER.get(id) - STRING_ORDER.get(stringIds[i - 1]) === 1);
   const hasCrossing = sequence => new Set(addFingerings(sequence).map(note => note.stringId)).size >= 2;
 

@@ -30,10 +30,9 @@ const DEFAULT_PHRASES = [
 ];
 const SILENT = Object.freeze({f:-1, conf:0, rms:0});
 
-test('相棒はレベル1〜4が共通、5〜8で一段ずつ進化する', () => {
-  assert.deepEqual([1,2,3,4,5,6,7,8].map(companionStage), [1,1,1,1,2,3,4,5]);
-  assert.equal(renderCompanion(1), renderCompanion(4));
-  assert.equal(new Set([4,5,6,7,8].map(level => renderCompanion(level))).size, 5);
+test('相棒は新レベル1〜5で一段ずつ進化する', () => {
+  assert.deepEqual([1,2,3,4,5].map(companionStage), [1,2,3,4,5]);
+  assert.equal(new Set([1,2,3,4,5].map(level => renderCompanion(level))).size, 5);
 });
 
 test('3種類を選べて設定を保存し、再起動時にも復元する', () => {
@@ -57,7 +56,7 @@ test('3種類を選べて設定を保存し、再起動時にも復元する', (
 test('恐竜と犬も正解・不正解・弾き直しに反応する', async () => {
   for (const kind of ['dino','dog']) {
     const h=createHarness({storedSettings:{companion:kind}});
-    await startMicPractice(h,{level:8});
+    await startMicPractice(h,{level:5});
     const art=h.document.getElementById('companion-art');
     assert.match(art.innerHTML,new RegExp(`data-kind="${kind}"`));
     assert.match(art.innerHTML,/data-stage="5"/);
@@ -73,16 +72,16 @@ test('恐竜と犬も正解・不正解・弾き直しに反応する', async ()
   }
 });
 
-test('レベル6・8は番号なしでも同音異弦の0と4だけを残す', async () => {
+test('レベル3・5は番号なしでも同音異弦の0と4だけを残す', async () => {
   const phrases = [[note(76,'A',4),note(76,'E',0),note(71,'A',1),note(83,'E',4)]];
-  for (const level of [5,6,8]) {
+  for (const level of [2,3,5]) {
     for (const marks of ['off','color']) {
       const h = createHarness({phrases});
       h.document.getElementById('marks-select').value = marks;
       await startMicPractice(h,{level});
       const svg = h.document.getElementById('staff-wrap').innerHTML;
       const labels = [...svg.matchAll(/data-role="finger"[^>]*data-finger="(\d)"/g)].map(m=>m[1]);
-      assert.deepEqual(labels, level===5 ? [] : ['4','0']);
+      assert.deepEqual(labels, level===2 ? [] : ['4','0']);
       h.app.destroy();
     }
   }
@@ -579,7 +578,7 @@ test('F: やり直しは音高でまとめ、勧めた運指を従属情報と�
     DEFAULT_PHRASES[2]
   ];
   const harness = createHarness({phrases});
-  await startMicPractice(harness, {level:6});
+  await startMicPractice(harness, {level:3});
   await passWholeSession(harness, phrases, new Set(['0:0', '1:0']));
 
   const trouble = harness.document.getElementById('trouble-list').children;
@@ -631,9 +630,9 @@ test('I: 弦を選ぶレベルでは、押した弦が画面と出題の両方�
   const form = document.getElementById('settings-form');
   const field = document.getElementById('strings-field');
 
-  assert.equal(field.hidden, true, 'レベル1では弦を選ばせない');
+  assert.equal(field.hidden, false, 'レベル1では1本選ぶ');
 
-  document.getElementById('level-select').value = '5';
+  document.getElementById('level-select').value = '2';
   form.dispatch('change');
   assert.equal(field.hidden, false);
   assert.deepEqual(pressedStrings(document), ['A', 'E'], 'レベル5の既定はラ線とミ線');
@@ -650,7 +649,7 @@ test('I: 弦を選ぶレベルでは、押した弦が画面と出題の両方�
   document.getElementById('string-chip-E').click();
   assert.deepEqual(pressedStrings(document), ['G', 'E']);
 
-  await startMicPractice(harness, {level:5});
+  await startMicPractice(harness, {level:2});
   assert.deepEqual(harness.phraseArgs.at(-1).strings, ['G', 'E']);
 
   const legend = document.getElementById('string-legend');
@@ -663,15 +662,15 @@ test('I: 弦を選べないレベルではチップを隠し、選択を出題�
   const document = harness.document;
   const form = document.getElementById('settings-form');
 
-  document.getElementById('level-select').value = '6';
+  document.getElementById('level-select').value = '3';
   form.dispatch('change');
   assert.deepEqual(pressedStrings(document), ['A', 'E']);
 
-  document.getElementById('level-select').value = '8';
+  document.getElementById('level-select').value = '5';
   form.dispatch('change');
   assert.equal(document.getElementById('strings-field').hidden, true);
 
-  await startMicPractice(harness, {level:8});
+  await startMicPractice(harness, {level:5});
   assert.deepEqual(harness.phraseArgs.at(-1).strings, ['A', 'E'], '選択は保つが出題側が無視する');
 });
 
@@ -740,4 +739,35 @@ test('とばした音があるとタイマー結果はクリアと呼ばない',
   assert.match(h.document.getElementById('result-time').textContent,/^練習時間（とばした音あり）/);
   assert.equal(h.clock.pendingTimers,0);
   h.app.destroy();
+});
+
+
+test('新レベル1は弦を1本ずつ切り替えて出題へ渡す', async () => {
+  for(const string of ['G','D','A','E']) {
+    const h=createHarness();
+    h.document.getElementById(`string-chip-${string}`).click();
+    assert.deepEqual(pressedStrings(h.document),[string]);
+    h.document.getElementById(`string-chip-${string}`).click();
+    assert.deepEqual(pressedStrings(h.document),[string]);
+    await startMicPractice(h);
+    assert.deepEqual(h.phraseArgs.at(-1).strings,[string]);
+    assert.equal(h.phraseArgs.at(-1).level,1);
+    h.app.destroy();
+  }
+});
+
+test('旧8段階の保存設定は対応する新段階と弦へ一度だけ移行する', () => {
+  for(let level=1;level<=8;level++) {
+    const h=createHarness({storedSettings:{level,strings:['G','D'],timer:'on',companion:'dog'}});
+    assert.equal(h.document.getElementById('level-select').value,String(level<=4?1:level-3));
+    if(level<=4) assert.deepEqual(pressedStrings(h.document),[['E','A','D','G'][level-1]]);
+    h.document.getElementById('timer-chip-on').click();
+    const settings=JSON.parse(h.storage.getItem('fuyomi')).settings;
+    assert.equal(settings.levelScheme,2);
+    assert.equal(settings.companion,'dog');
+    const reopened=createHarness({storedSettings:settings});
+    assert.equal(reopened.document.getElementById('level-select').value,String(settings.level));
+    assert.deepEqual(pressedStrings(reopened.document),pressedStrings(h.document));
+    reopened.app.destroy();h.app.destroy();
+  }
 });

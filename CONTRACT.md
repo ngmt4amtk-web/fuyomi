@@ -29,14 +29,11 @@ export function keySignature(key)
 ```js
 export const ALL_STRING_IDS = ['G','D','A','E'];
 export const LEVELS = {
-  1:{label:'ミ線だけ',   strings:['E'],             maxFinger:3},
-  2:{label:'ラ線だけ',   strings:['A'],             maxFinger:3},
-  3:{label:'レ線だけ',   strings:['D'],             maxFinger:3},
-  4:{label:'ソ線だけ',   strings:['G'],             maxFinger:3},
-  5:{label:'選んだ2本',  strings:null, choose:{min:1,max:2}, preset:['A','E'],  maxFinger:3},
-  6:{label:'選んだ弦で4の指まで', strings:null, choose:{min:1,max:4}, preset:['A','E'], maxFinger:4},
-  7:{label:'4本ぜんぶ',  strings:['G','D','A','E'], maxFinger:3},
-  8:{label:'4本ぜんぶ・4の指まで', strings:['G','D','A','E'], maxFinger:4}
+  1: {label: '選んだ1本', strings: null, choose: {min: 1, max: 1}, preset: ['E'], maxFinger: 3},
+  2: {label: '選んだ2本', strings: null, choose: {min: 1, max: 2}, preset: ['A', 'E'], maxFinger: 3},
+  3: {label: '選んだ弦で4の指まで', strings: null, choose: {min: 1, max: 4}, preset: ['A', 'E'], maxFinger: 4},
+  4: {label: '4本ぜんぶ', strings: ['G', 'D', 'A', 'E'], maxFinger: 3},
+  5: {label: '4本ぜんぶ・4の指まで', strings: ['G', 'D', 'A', 'E'], maxFinger: 4}
 };
 // strings が null のレベルだけ、画面で選んだ弦を受け取る。本数が choose に合わなければ preset。
 // min は上限ちょうどにしない（選択中の弦が1つも外せないボタンになる）。
@@ -87,7 +84,7 @@ export function judgeNote({freq, targetMidi, candidates, cfg, a4})
 ```js
 export function renderStaff({key, notes, width, theme, marks})
 // notes = [{midi, stringId, finger, state:'done'|'current'|'todo'|'miss', hint:{stringId,finger,nameJa}|null}]
-// note.forceFinger = true // その音だけ番号を残す。レベル6・8の同音異弦の0/4にappが指定。
+// note.forceFinger = true // その音だけ番号を残す。レベル3・5の同音異弦の0/4にappが指定。
 // marks = 'both'（弦の色＋指番号）| 'color'（弦の色だけ）| 'off'（既定。五線だけ）
 // → SVG文字列。五線・ト音記号（自前パス）・調号・音符・符幹・加線・臨時記号・状態の描き分け。
 // 指番号は data-role="finger"。五線の上端より上に置き、上加線へ出た音だけ自分の加線ぶん持ち上げる。
@@ -123,6 +120,6 @@ node 22 の標準機能だけ（`node:test` / `node:assert`）。`node tests/run
 
 ## 2026-09-09の追加契約
 
-- 4音のレベル5以降で隣接弦を複数選んだ場合、毎回2本以上の弦を含める。4弦のときは前回にない弦も含める。
+- 4音のレベル2以降で隣接弦を複数選んだ場合、毎回2本以上の弦を含める。4弦のときは前回にない弦も含める。
 - 非隣接弦だけを選んだ場合、従来の4度以内の制約を優先する。1本を選んだ場合もその選択を守る。
 - js/companion.js は純粋なSVG文字列生成。DOMの操作はapp.jsに集約する。

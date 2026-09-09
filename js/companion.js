@@ -2,7 +2,7 @@
 // DOM操作はapp.jsが受け持つ。
 export function companionStage(level) {
   const n = Number(level);
-  return Number.isInteger(n) && n >= 5 && n <= 8 ? n - 3 : 1;
+  return Number.isInteger(n) && n >= 1 && n <= 5 ? n : 1;
 }
 
 export const COMPANIONS = ['fluffy', 'dino', 'dog'];

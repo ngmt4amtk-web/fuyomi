@@ -4,7 +4,7 @@ import {
   canChooseStrings,
   levelStrings,
   makePhrase as defaultMakePhrase,
-} from './phrase.js?v=20260909-2';
+} from './phrase.js?v=20260909-8';
 import {
   TOL,
   createHolder as defaultCreateHolder,
@@ -23,7 +23,7 @@ import {
   stringColor,
 } from './theory.js';
 import { renderStaff as defaultRenderStaff } from './staff.js?v=20260909-2';
-import { COMPANIONS, renderCompanion } from './companion.js?v=20260909-7';
+import { COMPANIONS, renderCompanion } from './companion.js?v=20260909-8';
 
 export function createFuyomiApp(dependencies = {}) {
 const window = dependencies.window ?? globalThis.window;
@@ -224,6 +224,7 @@ function normalizedSettings(raw = {}) {
   const a4 = Number(raw.a4);
   return {
     level: LEVELS[level] ? level : DEFAULTS.level,
+    levelScheme: 2,
     key: KEYS[raw.key] ? raw.key : DEFAULTS.key,
     count: VALID_COUNTS.has(count) ? count : DEFAULTS.count,
     hint: raw.hint === 'on' ? 'on' : DEFAULTS.hint,
@@ -279,11 +280,21 @@ function queryOverrides() {
   return { overrides, locked, hasQuery: locked.size > 0 || Boolean(overrides.strings) };
 }
 
+// 保存済みの旧番号を一度だけ移行し、以前選んだ単弦を失わない。
+function migrateLevelSettings(settings = {}) {
+  if (settings.levelScheme === 2) return settings;
+  const oldLevel = Number(settings.level);
+  if (!Number.isInteger(oldLevel) || oldLevel < 1 || oldLevel > 8) return settings;
+  return oldLevel <= 4
+    ? {...settings, level:1, strings:[['E','A','D','G'][oldLevel - 1]], levelScheme:2}
+    : {...settings, level:oldLevel - 3, levelScheme:2};
+}
+
 const stored = readStorage();
 const query = queryOverrides();
 const initialSettings = normalizedSettings({
   ...DEFAULTS,
-  ...(stored.settings || {}),
+  ...migrateLevelSettings(stored.settings),
   ...query.overrides,
 });
 
@@ -449,7 +460,9 @@ function renderStringChoice() {
     return;
   }
   const { max } = LEVELS[level].choose;
-  elements.stringsNote.textContent = max < ALL_STRING_IDS.length
+  elements.stringsNote.textContent = max === 1
+    ? '弦を1本えらびます。別の弦を押すと切り替わります。'
+    : max < ALL_STRING_IDS.length
     ? `${max}本までえらべます。${max}本のときに別の弦を押すと、先に選んだほうと入れ替わります。`
     : `1本から${max}本までえらべます。`;
 }
@@ -464,7 +477,7 @@ function toggleString(stringId) {
   if (at >= 0) {
     if (current.length <= min) {
       // 押しても何も起きないボタンにしない。外せない理由をその場に出す。
-      elements.stringsNote.textContent = '弦は1本以上えらびます。先に別の弦を足してから外します。';
+      elements.stringsNote.textContent = max === 1 ? '別の弦を押すと切り替わります。' : '弦は1本以上えらびます。先に別の弦を足してから外します。';
       return;
     }
     current.splice(at, 1);
@@ -1060,7 +1073,7 @@ function buildStaffNotes() {
       state: noteState,
       hint,
       // 0と4の選択は音高では区別できないため、番号非表示でも勧める運指を残す。
-      forceFinger: [6, 8].includes(state.config.level) && [0, 4].includes(note.finger)
+      forceFinger: [3, 5].includes(state.config.level) && [0, 4].includes(note.finger)
         && positionsForMidi(note.midi, state.config.key).some(position => position.finger !== note.finger
           && [0, 4].includes(position.finger)),
     };
@@ -1541,7 +1554,11 @@ elements.settingsForm.addEventListener('submit', (event) => {
   startSession(config);
 });
 
+let previousSetupLevel = selectedLevel();
 elements.settingsForm.addEventListener('change', () => {
+  const nextLevel = selectedLevel();
+  if (previousSetupLevel === 1 && [2, 3].includes(nextLevel)) pickedStrings = null;
+  previousSetupLevel = nextLevel;
   renderOptionChips();
   renderKeyPreview();
   syncPickedStrings();
