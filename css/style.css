@@ -40,9 +40,13 @@
 .companion-choice { position: relative; min-width: 0; padding: 3px; border: 2px solid var(--line); border-radius: 18px; background: var(--surface); aspect-ratio: 1; cursor: pointer; }
 .companion-choice[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); box-shadow: 0 0 0 2px var(--accent-soft); }
 .companion-choice[aria-pressed="true"]::after { content: '✓'; position: absolute; right: 5px; top: 4px; width: 19px; height: 19px; border-radius: 50%; background: var(--accent); color: var(--surface); font-size: 12px; line-height: 19px; }
-.companion-choice .companion-svg { height: 100%; }
 .companion-dog { position: relative; width: 100%; height: 100%; display: grid; place-items: center; }
 .dog-portrait { width: 90%; aspect-ratio: 1; border-radius: 50%; background-image: url('../assets/dog-companion-v2.png'); background-size: 300% 100%; background-position: 0 50%; }
+[data-kind="fluffy"] .dog-portrait { background-image: url('../assets/fluffy-illustration-v1.png'); }
+[data-kind="dino"] .dog-portrait { background-image: url('../assets/dino-illustration-v1.png'); }
+/* イラストの耳・しっぽを丸い切り抜きで欠かさない。 */
+[data-kind="fluffy"] .dog-portrait,
+[data-kind="dino"] .dog-portrait { border-radius: 16%; }
 .dog-portrait[data-mood="happy"] { background-position: 50% 50%; }
 .dog-portrait[data-mood="gloomy"] { background-position: 100% 50%; }
 .companion-dog[data-stage="2"] .dog-portrait { box-shadow: 0 0 0 2px #94beca; }
@@ -54,7 +58,6 @@
 @keyframes dog-bounce { 0%,100% { transform: translateY(0); } 30% { transform: translateY(-7px) rotate(-4deg); } 65% { transform: translateY(-3px) rotate(3deg); } }
 .companion { width: min(100%, 410px); margin: -10px auto 0; gap: 4px; }
 .companion-art { flex: 0 0 130px; height: 117px; }
-.companion-svg { display: block; width: 100%; height: auto; overflow: visible; }
 .companion-words {
   flex: 1;
   position: relative;
@@ -71,39 +74,12 @@
 }
 .companion[data-reaction="happy"] .companion-words { border-color: #bda3b9; background: #fbe7ef; color: #6a425a; }
 .companion[data-reaction="miss"] .companion-words { border-color: #a39bac; background: #eae5f0; color: #51475f; }
-.companion-svg.is-gloomy { filter: saturate(.35); }
-.is-gloomy [fill="#fff8ee"] { fill: #dcd7e7; }
-.is-gloomy [fill="#f3b7c7"] { fill: #baa8c8; }
-.companion-body { transform-origin: 100px 154px; }
-.companion-arm.left { transform-origin: 54px 115px; }
-.companion-arm.right { transform-origin: 146px 115px; }
-.companion-sparkles { opacity: 0; transform-origin: 100px 100px; }
-.is-happy .companion-body { animation: companion-hop 800ms ease-in-out both; }
-.is-happy .companion-arm.left { animation: companion-wave-left 260ms ease-in-out 3; }
-.is-happy .companion-arm.right { animation: companion-wave-right 260ms ease-in-out 3; }
-.is-happy .companion-sparkles { animation: companion-sparkle 800ms ease-out both; }
-@keyframes companion-hop {
-  0%, 100% { transform: translateY(0) scale(1); }
-  15% { transform: translateY(2px) scale(1.06, .93); }
-  40% { transform: translateY(-14px) rotate(-5deg); }
-  65% { transform: translateY(0) scale(1.04, .96); }
-  82% { transform: translateY(-5px) rotate(4deg); }
-}
-@keyframes companion-wave-left { 50% { transform: rotate(50deg); } }
-@keyframes companion-wave-right { 50% { transform: rotate(-50deg); } }
-@keyframes companion-sparkle {
-  0% { opacity: 0; transform: scale(.7); }
-  25%, 65% { opacity: 1; }
-  100% { opacity: 0; transform: scale(1.1); }
-}
 @media (max-width: 359px), (max-height: 700px) {
   .companion-art { flex-basis: 100px; height: 90px; }
   .companion-words { font-size: .84rem; padding: 10px 12px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .companion-dog.is-happy .dog-portrait { animation: none; }
-  .is-happy .companion-body, .is-happy .companion-arm, .is-happy .companion-sparkles { animation: none; }
-  .is-happy .companion-sparkles { opacity: 1; }
 }
 
 @media (prefers-color-scheme: dark) {
