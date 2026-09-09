@@ -8,7 +8,7 @@
   <meta name="description" content="大人の初心者が、4音ずつ五線譜を読んでバイオリンで確かめる練習アプリ">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'/%3E">
   <title>ふよみ</title>
-  <link rel="stylesheet" href="css/style.css?v=20260909-5">
+  <link rel="stylesheet" href="css/style.css?v=20260909-6">
 </head>
 <body>
   <main class="app-shell">
@@ -94,6 +94,15 @@
           </div>
         </fieldset>
 
+        <div class="field timer-setting">
+          <span id="timer-label">タイマー</span>
+          <select id="timer-select" class="visually-hidden" name="timer" aria-label="タイマー" tabindex="-1"><option value="off">オフ</option><option value="on">オン</option></select>
+          <div class="chip-row" role="group" aria-labelledby="timer-label">
+            <button id="timer-chip-off" class="option-chip" type="button" aria-pressed="true">オフ</button>
+            <button id="timer-chip-on" class="option-chip" type="button" aria-pressed="false">オン</button>
+          </div>
+          <p class="field-note">問題が出てから最後の音まで。おてほん・やり直しの時間も含みます。</p>
+        </div>
         <details class="advanced-settings">
           <summary>詳細設定</summary>
           <div class="field-grid advanced-grid">
@@ -130,8 +139,8 @@
 
     <section id="check-screen" class="screen centered-screen" aria-labelledby="check-title" hidden>
       <header class="compact-header">
-        <p class="step-label">音の確認</p>
-        <h1 id="check-title">ラ線（A線）を開放で<br>1回鳴らしてみて</h1>
+        <p class="step-label">練習の準備</p>
+        <h1 id="check-title">マイクを準備しています</h1>
       </header>
 
       <div class="listening-mark" aria-hidden="true">
@@ -167,6 +176,7 @@
         <p id="manual-notice" class="notice subtle-notice" hidden>音を聞かないモードです。弾けたら自分で次へ進みます。</p>
       </div>
 
+      <p id="practice-timer" class="practice-timer" role="timer" aria-live="off" hidden></p>
       <div class="practice-stage">
         <div id="staff-wrap" class="staff-wrap" aria-live="polite"></div>
 
@@ -214,6 +224,7 @@
       <header class="result-header">
         <p class="eyebrow">今回出た音</p>
         <h1 id="result-title">練習の記録</h1>
+        <p id="result-time" class="result-time" hidden></p>
         <p id="result-summary" class="result-summary"></p>
         <p id="result-mode-note" class="result-mode-note" hidden></p>
       </header>
@@ -248,6 +259,6 @@
   </div>
 
   <noscript>このアプリを使うにはJavaScriptを有効にしてください。</noscript>
-  <script type="module" src="js/app.js?v=20260909-5"></script>
+  <script type="module" src="js/app.js?v=20260909-6"></script>
 </body>
 </html>

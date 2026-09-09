@@ -23,7 +23,7 @@ import {
   stringColor,
 } from './theory.js';
 import { renderStaff as defaultRenderStaff } from './staff.js?v=20260909-2';
-import { COMPANIONS, renderCompanion } from './companion.js?v=20260909-5';
+import { COMPANIONS, renderCompanion } from './companion.js?v=20260909-6';
 
 export function createFuyomiApp(dependencies = {}) {
 const window = dependencies.window ?? globalThis.window;
@@ -66,6 +66,7 @@ const DEFAULTS = Object.freeze({
   hint: 'off',
   marks: 'both',
   companion: 'fluffy',
+  timer: 'off',
   // 弦を選べるレベルで未選択のときは、レベルごとの既定（LEVELS.preset）へ落とす。
   strings: null,
   tolerance: 'loose',
@@ -98,6 +99,9 @@ const elements = {
   keySelect: byId('key-select'),
   countSelect: byId('count-select'),
   hintSelect: byId('hint-select'),
+  timerSelect: byId('timer-select'),
+  practiceTimer: byId('practice-timer'),
+  resultTime: byId('result-time'),
   toleranceSelect: byId('tolerance-select'),
   a4Select: byId('a4-select'),
   levelDescription: byId('level-description'),
@@ -153,6 +157,7 @@ const CHIP_GROUPS = [
   { name: 'key', select: 'keySelect', values: ['C', 'G', 'D', 'A'] },
   { name: 'marks', select: 'marksSelect', values: ['both', 'color', 'off'] },
   { name: 'hint', select: 'hintSelect', values: ['off', 'on'] },
+  { name: 'timer', select: 'timerSelect', values: ['off', 'on'] },
 ];
 const optionChips = new Map(CHIP_GROUPS.flatMap((group) => group.values
   .map((value) => [`${group.name}:${value}`, byId(`${group.name}-chip-${value}`)])
@@ -176,8 +181,8 @@ const state = {
   animationFrame: 0,
   timers: new Set(),
   oscillators: new Set(),
-  checkFrames: 0,
-  checkConfirmed: false,
+  timerStartedAt: null,
+  timerStoppedAt: null,
   manualTransitionQueued: false,
   listenMode: true,
   phraseIndex: 0,
@@ -223,6 +228,7 @@ function normalizedSettings(raw = {}) {
     count: VALID_COUNTS.has(count) ? count : DEFAULTS.count,
     hint: raw.hint === 'on' ? 'on' : DEFAULTS.hint,
     marks: VALID_MARKS.has(raw.marks) ? raw.marks : DEFAULTS.marks,
+    timer: raw.timer === 'on' ? 'on' : 'off',
     companion: COMPANIONS.includes(raw.companion) ? raw.companion : DEFAULTS.companion,
     strings: normalizedStrings(raw.strings),
     tolerance: TOL[raw.tolerance] ? raw.tolerance : DEFAULTS.tolerance,
@@ -291,6 +297,7 @@ function settingsFromForm() {
     key: elements.keySelect.value,
     count: elements.countSelect.value,
     hint: elements.hintSelect.value,
+    timer: elements.timerSelect.value,
     marks: elements.marksSelect.value,
     strings: pickedStrings,
     companion: pickedCompanion,
@@ -342,6 +349,7 @@ function populateSettings(settings) {
   elements.keySelect.value = settings.key;
   elements.countSelect.value = String(settings.count);
   elements.hintSelect.value = settings.hint;
+  elements.timerSelect.value = settings.timer;
   elements.marksSelect.value = settings.marks;
   elements.toleranceSelect.value = settings.tolerance;
   elements.a4Select.value = String(settings.a4);
@@ -603,8 +611,7 @@ async function startMicrophone(token) {
       return;
     }
     state.mic = mic;
-    elements.checkStatus.textContent = '音を待っています';
-    startAudioLoop(token);
+    beginPractice(token, true);
   } catch (error) {
     // 自動フォールバックや「音を聞かない」選択の後に届いた失敗は、現在の練習を触らない。
     if (token !== state.sessionId || state.screen !== 'check') return;
@@ -617,8 +624,8 @@ function startSession(config) {
   const token = state.sessionId;
   state.config = { ...config };
   state.listenMode = true;
-  state.checkFrames = 0;
-  state.checkConfirmed = false;
+  state.timerStartedAt = null;
+  state.timerStoppedAt = null;
   state.manualTransitionQueued = false;
   state.phraseIndex = 0;
   state.phrase = null;
@@ -633,22 +640,8 @@ function startSession(config) {
   resetCheckView();
   showScreen('check');
 
-  later(() => revealGuide('volume'), 2600, token);
   later(() => revealGuide('permission'), 5400, token);
-  later(() => revealGuide('noise'), 8200, token);
-  later(() => {
-    queueManualPractice('音を確認できませんでした。音を聞かないモードへ切り替えます。', token, 1400);
-  }, 11200, token);
   void startMicrophone(token);
-}
-
-function confirmSound(token) {
-  if (state.checkConfirmed || token !== state.sessionId) return;
-  state.checkConfirmed = true;
-  clearTimers();
-  elements.listeningMark.classList.add('is-heard');
-  elements.checkStatus.textContent = '聞こえてるよ';
-  later(() => beginPractice(token, true), 650, token);
 }
 
 function buildCandidates(config) {
@@ -674,8 +667,7 @@ function beginPractice(token, listenMode) {
   state.listenMode = listenMode && Boolean(state.mic);
   state.manualTransitionQueued = false;
   state.holder = createHolder(TOL[state.config.tolerance]);
-  // 音確認で伸ばした音を最初の出題へ持ち越さず、いったん途切れてから受け付ける。
-  state.holder.reset();
+  // 確認音を要求しないので、新規holderのまま最初の発音を受け付ける。
 
   if (!state.listenMode) {
     if (state.animationFrame) cancelAnimationFrame(state.animationFrame);
@@ -688,7 +680,36 @@ function beginPractice(token, listenMode) {
   showScreen('practice');
   renderPracticeCompanion();
   loadPhrase();
+  startPracticeTimer(token);
   if (state.listenMode && !state.animationFrame) startAudioLoop(token);
+}
+
+// tickの回数ではなく単調増加する時計との差を表示し、タブが隠れても計測を失わない。
+function elapsedPracticeMs() {
+  return state.timerStartedAt === null ? 0 : Math.max(0,
+    (state.timerStoppedAt ?? performance.now()) - state.timerStartedAt);
+}
+function formatPracticeTime(ms) {
+  const tenths = Math.floor(ms / 100);
+  return `${Math.floor(tenths / 600)}:${String(Math.floor(tenths / 10) % 60).padStart(2, '0')}.${tenths % 10}`;
+}
+function startPracticeTimer(token) {
+  const enabled = state.config.timer === 'on';
+  elements.practiceTimer.hidden = !enabled;
+  elements.practiceTimer.textContent = '';
+  if (!enabled) return;
+  state.timerStartedAt = performance.now();
+  state.timerStoppedAt = null;
+  const tick = () => {
+    elements.practiceTimer.textContent = `経過 ${formatPracticeTime(elapsedPracticeMs())}`;
+    if (state.timerStoppedAt === null && state.screen === 'practice') later(tick, 100, token);
+  };
+  tick();
+}
+function stopPracticeTimer() {
+  if (state.timerStartedAt === null || state.timerStoppedAt !== null) return;
+  state.timerStoppedAt = performance.now();
+  elements.practiceTimer.textContent = `経過 ${formatPracticeTime(elapsedPracticeMs())}`;
 }
 
 function loadPhrase() {
@@ -807,14 +828,7 @@ function startAudioLoop(token) {
 
     try {
       const detection = detect(state.mic.read(), state.mic.sampleRate);
-      if (state.screen === 'check' && !state.checkConfirmed) {
-        if (detection.f > 0 && detection.conf > TOL.loose.conf) {
-          state.checkFrames += 1;
-          if (state.checkFrames >= 2) confirmSound(token);
-        } else {
-          state.checkFrames = 0;
-        }
-      } else if (state.screen === 'practice' && state.listenMode) {
+      if (state.screen === 'practice' && state.listenMode) {
         processPracticeAudio(now, detection, token);
       }
     } catch {
@@ -971,6 +985,8 @@ function skipCurrentNote() {
 
 async function completePhrase(token) {
   if (token !== state.sessionId) return;
+  // 最後の音で止める。完了ファンファーレと結果への待ち時間は加算しない。
+  if (state.phraseIndex + 1 >= state.config.count) stopPracticeTimer();
   const allPassed = state.outcomes.every((outcome) => outcome === 'passed');
   let soundDuration = 0;
   if (allPassed) {
@@ -1398,6 +1414,11 @@ function aggregateTrouble() {
 }
 
 function renderResults() {
+  elements.resultTime.hidden = state.config.timer !== 'on';
+  const cleared = state.records.every(record => record.outcome === 'passed');
+  elements.resultTime.textContent = state.config.timer === 'on'
+    ? `${cleared ? 'クリアタイム' : '練習時間（とばした音あり）'} ${formatPracticeTime(elapsedPracticeMs())}` : '';
+
   const total = state.records.length;
   const cleanMic = state.records.filter((record) =>
     record.mode === 'mic'

@@ -6,6 +6,7 @@ import {mtof} from '../js/theory.js';
 import {companionStage, renderCompanion} from '../js/companion.js';
 
 const ELEMENT_IDS = [
+  'timer-select', 'timer-chip-off', 'timer-chip-on', 'practice-timer', 'result-time',
   'setup-screen', 'check-screen', 'practice-screen', 'result-screen', 'settings-form',
   'level-select', 'key-select', 'count-select', 'hint-select', 'sound-select',
   'marks-select', 'strings-field', 'strings-note', 'string-legend', 'string-chip-G',
@@ -450,10 +451,7 @@ async function startMicPractice(harness, options = {}){
   configure(harness, options);
   submit(harness);
   await flushAsync();
-  harness.setDetection(voiced(69));
-  harness.clock.frame(20);
-  harness.clock.frame(20);
-  harness.clock.advance(650);
+
   assert.equal(harness.document.getElementById('practice-screen').hidden, false);
   armWithSilence(harness);
 }
@@ -546,7 +544,7 @@ test('D: 手動モード開始後に届いたマイク失敗は練習開始を�
   configure(harness);
   submit(harness);
 
-  harness.clock.advance(12600);
+  harness.document.getElementById('without-mic-button').click();
   assert.equal(harness.document.getElementById('practice-screen').hidden, false);
   assert.equal(harness.phraseCalls, 1);
   assert.equal(harness.clock.pendingTimers, 0);
@@ -675,4 +673,71 @@ test('I: 弦を選べないレベルではチップを隠し、選択を出題�
 
   await startMicPractice(harness, {level:8});
   assert.deepEqual(harness.phraseArgs.at(-1).strings, ['A', 'E'], '選択は保つが出題側が無視する');
+});
+
+
+test('確認音を待たずに問題へ進み、最初の発音を受け付ける', async () => {
+  const h = createHarness();
+  submit(h);
+  await flushAsync();
+  assert.equal(h.document.getElementById('practice-screen').hidden, false);
+  holdMidi(h, 69);
+  assert.equal(h.document.getElementById('companion').getAttribute('data-reaction'), 'happy');
+  h.app.destroy();
+});
+
+test('タイマーは既定オフ、オンオフの選択を保存・復元する', async () => {
+  const h = createHarness();
+  assert.equal(h.document.getElementById('timer-select').value, 'off');
+  h.document.getElementById('timer-chip-on').click();
+  const settings = JSON.parse(h.storage.getItem('fuyomi')).settings;
+  assert.equal(settings.timer, 'on');
+  const restored = createHarness({storedSettings:settings});
+  assert.equal(restored.document.getElementById('timer-chip-on').getAttribute('aria-pressed'), 'true');
+  restored.document.getElementById('timer-chip-off').click();
+  await startManualPractice(restored);
+  assert.equal(restored.document.getElementById('practice-timer').hidden, true);
+  skipWholeSession(restored);
+  assert.equal(restored.document.getElementById('result-time').hidden, true);
+  h.app.destroy(); restored.app.destroy();
+});
+
+test('タイマーはマイク準備待ちを含めず、終了で止まり再挑戦はゼロから', async () => {
+  const pending = deferred();
+  const h = createHarness({storedSettings:{timer:'on'},createMicrophone:()=>pending.promise});
+  submit(h);
+  h.clock.advance(5000);
+  h.document.getElementById('without-mic-button').click();
+  assert.equal(h.document.getElementById('practice-timer').textContent, '経過 0:00.0');
+  h.clock.advance(1200);
+  assert.equal(h.document.getElementById('practice-timer').textContent, '経過 0:01.2');
+  for (let i=0; i<12; i++) {
+    h.document.getElementById('manual-next-button').click();
+    const atLastNote = h.document.getElementById('practice-timer').textContent;
+    await flushAsync();
+    h.clock.advance(i%4===3 ? 1000 : 300);
+    if(i===11) {
+      assert.equal(h.document.getElementById('result-time').textContent,
+        atLastNote.replace('経過', 'クリアタイム'));
+    }
+  }
+  const result = h.document.getElementById('result-time').textContent;
+  h.clock.advance(10000);
+  assert.equal(h.document.getElementById('result-time').textContent, result);
+  assert.equal(h.clock.pendingTimers,0);
+  h.document.getElementById('retry-button').click();
+  h.document.getElementById('without-mic-button').click();
+  assert.equal(h.document.getElementById('practice-timer').textContent,'経過 0:00.0');
+  h.document.getElementById('quit-button').click();
+  assert.equal(h.clock.pendingTimers,0);
+  h.app.destroy();
+});
+
+test('とばした音があるとタイマー結果はクリアと呼ばない', async () => {
+  const h = createHarness({storedSettings:{timer:'on'}});
+  await startManualPractice(h);
+  skipWholeSession(h);
+  assert.match(h.document.getElementById('result-time').textContent,/^練習時間（とばした音あり）/);
+  assert.equal(h.clock.pendingTimers,0);
+  h.app.destroy();
 });

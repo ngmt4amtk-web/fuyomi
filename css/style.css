@@ -955,3 +955,7 @@ noscript {
     transition-duration: 0.01ms !important;
   }
 }
+
+.timer-setting { margin: 16px 0 20px; }
+.practice-timer { margin: 0 0 10px; text-align: right; font-variant-numeric: tabular-nums; font-size: .95rem; }
+.result-time { font-size: 1.45rem; font-weight: 650; font-variant-numeric: tabular-nums; }
