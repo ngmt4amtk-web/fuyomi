@@ -23,7 +23,7 @@ import {
   stringColor,
 } from './theory.js';
 import { renderStaff as defaultRenderStaff } from './staff.js?v=20260909-2';
-import { companionStage, COMPANION_NAMES, renderCompanion } from './companion.js?v=20260909-2';
+import { COMPANIONS, renderCompanion } from './companion.js?v=20260909-3';
 
 export function createFuyomiApp(dependencies = {}) {
 const window = dependencies.window ?? globalThis.window;
@@ -65,6 +65,7 @@ const DEFAULTS = Object.freeze({
   count: 3,
   hint: 'off',
   marks: 'both',
+  companion: 'fluffy',
   // 弦を選べるレベルで未選択のときは、レベルごとの既定（LEVELS.preset）へ落とす。
   strings: null,
   tolerance: 'loose',
@@ -118,7 +119,6 @@ const elements = {
   companion: byId('companion'),
   companionArt: byId('companion-art'),
   companionWords: byId('companion-words'),
-  companionPreview: byId('companion-preview'),
   hintPanel: byId('hint-panel'),
   hintName: byId('hint-name'),
   hintFingering: byId('hint-fingering'),
@@ -142,6 +142,7 @@ const elements = {
 };
 
 const stringChips = new Map(ALL_STRING_IDS.map((id) => [id, byId(`string-chip-${id}`)]));
+const companionChips = new Map(COMPANIONS.map(id => [id, byId(`companion-chip-${id}`)]));
 
 /*
  * レベル以外は「開いて選ぶ」をやめ、選択肢を出したままワンタップで選べるようにする。
@@ -222,6 +223,7 @@ function normalizedSettings(raw = {}) {
     count: VALID_COUNTS.has(count) ? count : DEFAULTS.count,
     hint: raw.hint === 'on' ? 'on' : DEFAULTS.hint,
     marks: VALID_MARKS.has(raw.marks) ? raw.marks : DEFAULTS.marks,
+    companion: COMPANIONS.includes(raw.companion) ? raw.companion : DEFAULTS.companion,
     strings: normalizedStrings(raw.strings),
     tolerance: TOL[raw.tolerance] ? raw.tolerance : DEFAULTS.tolerance,
     a4: VALID_A4.has(a4) ? a4 : DEFAULTS.a4,
@@ -281,6 +283,7 @@ const initialSettings = normalizedSettings({
 
 // 弦の選択は select ではないので、押した順を保つ配列としてここで持つ。
 let pickedStrings = initialSettings.strings ? [...initialSettings.strings] : null;
+let pickedCompanion = initialSettings.companion;
 
 function settingsFromForm() {
   return normalizedSettings({
@@ -290,6 +293,7 @@ function settingsFromForm() {
     hint: elements.hintSelect.value,
     marks: elements.marksSelect.value,
     strings: pickedStrings,
+    companion: pickedCompanion,
     tolerance: elements.toleranceSelect.value,
     a4: elements.a4Select.value,
   });
@@ -476,9 +480,11 @@ function stringsLabelText(stringIds) {
 
 function updateLevelDescription() {
   const level = selectedLevel();
-  if (elements.companionPreview) {
-    elements.companionPreview.innerHTML = `${renderCompanion(level)}<div><strong>${COMPANION_NAMES[companionStage(level) - 1]}の相棒</strong><p>1音できるたび、一緒によろこぶ。<br>レベル5から、ひとつずつおめかし。</p></div>`;
-  }
+  companionChips.forEach((chip, kind) => {
+    if (!chip) return;
+    chip.innerHTML = renderCompanion(level, false, false, kind);
+    chip.setAttribute('aria-pressed', String(kind === pickedCompanion));
+  });
   const stringIds = levelStrings(level, pickedStrings);
   const where = `第1ポジションで、${stringsLabelText(stringIds)}を使います。`;
   elements.levelDescription.textContent = LEVELS[level].maxFinger >= 4
@@ -851,7 +857,7 @@ function renderPracticeCompanion(happy = false, mode = 'mic', heardMidi = null) 
   companionMiss = heardMidi !== null;
   if (!elements.companionArt) return;
   // SVGを入れ替えると、前のジャンプの途中でも次の正解に必ず反応できる。
-  elements.companionArt.innerHTML = renderCompanion(state.config.level, happy, companionMiss);
+  elements.companionArt.innerHTML = renderCompanion(state.config.level, happy, companionMiss, state.config.companion);
   elements.companion.setAttribute('data-reaction', companionMiss ? 'miss' : happy ? 'happy' : 'idle');
   elements.companionWords.textContent = companionMiss ? `${noteNameJa(heardMidi)}の音に聞こえるよ` : happy
     ? (mode === 'mic' ? 'できたね！' : '一歩ずつ！')
@@ -1499,6 +1505,14 @@ elements.settingsForm.addEventListener('change', () => {
 
 stringChips.forEach((chip, id) => {
   chip?.addEventListener('click', () => toggleString(id));
+});
+
+companionChips.forEach((chip, kind) => {
+  chip?.addEventListener('click', () => {
+    pickedCompanion = kind;
+    updateLevelDescription();
+    saveSettings(settingsFromForm());
+  });
 });
 
 for (const group of CHIP_GROUPS) {

@@ -27,23 +27,31 @@
 }
 
 /* 譜面を覆わず、演出の前後で高さも変えない。手足だけで喜びを伝える。 */
-.companion-preview, .companion {
+.companion {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 12px;
   min-width: 0;
 }
-.companion-preview {
-  margin: 14px 0 20px;
-  padding: 8px 14px;
-  border: 1px solid var(--line);
-  border-radius: 20px;
-  background: var(--surface);
-  font-size: .85rem;
-}
-.companion-preview > svg { width: 88px; flex: 0 0 88px; }
-.companion-preview p { margin: 4px 0 0; color: var(--muted); line-height: 1.6; }
+.companion-picker { min-width: 0; margin: 20px 0; padding: 0; border: 0; }
+.companion-picker legend { padding: 0; margin-bottom: 10px; font-size: .9rem; font-weight: 650; }
+.companion-choices { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 10px; }
+.companion-choice { position: relative; min-width: 0; padding: 3px; border: 2px solid var(--line); border-radius: 18px; background: var(--surface); aspect-ratio: 1; cursor: pointer; }
+.companion-choice[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); box-shadow: 0 0 0 2px var(--accent-soft); }
+.companion-choice[aria-pressed="true"]::after { content: '✓'; position: absolute; right: 5px; top: 4px; width: 19px; height: 19px; border-radius: 50%; background: var(--accent); color: var(--surface); font-size: 12px; line-height: 19px; }
+.companion-choice .companion-svg { height: 100%; }
+.companion-dog { position: relative; width: 100%; height: 100%; display: grid; place-items: center; }
+.dog-portrait { width: 90%; aspect-ratio: 1; border-radius: 50%; background-image: url('../assets/dog-companion-v2.png'); background-size: 300% 100%; background-position: 0 50%; }
+.dog-portrait[data-mood="happy"] { background-position: 50% 50%; }
+.dog-portrait[data-mood="gloomy"] { background-position: 100% 50%; }
+.companion-dog[data-stage="2"] .dog-portrait { box-shadow: 0 0 0 2px #94beca; }
+.companion-dog[data-stage="3"] .dog-portrait { box-shadow: 0 0 0 3px #d5bc80, 0 0 0 6px #f5e8bd; }
+.companion-dog[data-stage="4"] .dog-portrait { box-shadow: 0 0 0 3px #b69ac9, 0 0 0 6px #e6dbef; }
+.companion-dog[data-stage="5"] .dog-portrait { box-shadow: 0 0 0 3px #d6ad51, 0 0 0 6px #f5df9c, 0 0 12px #d6ad5160; }
+.dog-medal { position: absolute; bottom: 1px; color: #8a6119; background: #fff1ca; border: 1px solid #d6ad51; border-radius: 10px; font-size: 11px; letter-spacing: 2px; padding: 0 5px; line-height: 16px; }
+.companion-dog.is-happy .dog-portrait { animation: dog-bounce 800ms ease-in-out both; }
+@keyframes dog-bounce { 0%,100% { transform: translateY(0); } 30% { transform: translateY(-7px) rotate(-4deg); } 65% { transform: translateY(-3px) rotate(3deg); } }
 .companion { width: min(100%, 410px); margin: -10px auto 0; gap: 4px; }
 .companion-art { flex: 0 0 130px; height: 117px; }
 .companion-svg { display: block; width: 100%; height: auto; overflow: visible; }
@@ -93,6 +101,7 @@
   .companion-words { font-size: .84rem; padding: 10px 12px; }
 }
 @media (prefers-reduced-motion: reduce) {
+  .companion-dog.is-happy .dog-portrait { animation: none; }
   .is-happy .companion-body, .is-happy .companion-arm, .is-happy .companion-sparkles { animation: none; }
   .is-happy .companion-sparkles { opacity: 1; }
 }

@@ -8,7 +8,7 @@
   <meta name="description" content="大人の初心者が、4音ずつ五線譜を読んでバイオリンで確かめる練習アプリ">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'/%3E">
   <title>ふよみ</title>
-  <link rel="stylesheet" href="css/style.css?v=20260909-2">
+  <link rel="stylesheet" href="css/style.css?v=20260909-3">
 </head>
 <body>
   <main class="app-shell">
@@ -85,7 +85,14 @@
         </div>
 
         <p id="level-description" class="field-note"></p>
-        <div id="companion-preview" class="companion-preview"></div>
+        <fieldset class="companion-picker">
+          <legend>相棒選択</legend>
+          <div class="companion-choices">
+            <button id="companion-chip-fluffy" class="companion-choice" type="button" aria-label="ふわふわ" aria-pressed="true"></button>
+            <button id="companion-chip-dino" class="companion-choice" type="button" aria-label="恐竜" aria-pressed="false"></button>
+            <button id="companion-chip-dog" class="companion-choice" type="button" aria-label="犬" aria-pressed="false"></button>
+          </div>
+        </fieldset>
 
         <details class="advanced-settings">
           <summary>詳細設定</summary>
@@ -241,6 +248,6 @@
   </div>
 
   <noscript>このアプリを使うにはJavaScriptを有効にしてください。</noscript>
-  <script type="module" src="js/app.js?v=20260909-2"></script>
+  <script type="module" src="js/app.js?v=20260909-3"></script>
 </body>
 </html>

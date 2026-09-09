@@ -5,9 +5,11 @@ export function companionStage(level) {
   return Number.isInteger(n) && n >= 5 && n <= 8 ? n - 3 : 1;
 }
 
-export const COMPANION_NAMES = ['ふわふわ', 'リボン', 'おめかし', '星のケープ', '星の王冠'];
+export const COMPANIONS = ['fluffy', 'dino', 'dog'];
 
-export function renderCompanion(level, happy = false, gloomy = false) {
+export function renderCompanion(level, happy = false, gloomy = false, kind = 'fluffy') {
+  if (kind === 'dino') return renderDinosaur(level, happy, gloomy);
+  if (kind === 'dog') return renderDog(level, happy, gloomy);
   const stage = companionStage(level);
   const ribbon = stage >= 2;
   const cape = stage >= 4;
@@ -41,4 +43,37 @@ export function renderCompanion(level, happy = false, gloomy = false) {
       ${crown ? '<path d="m76 49-5-25 18 12 11-20 11 20 18-12-5 25Z" fill="#f5d482"/><path d="M79 49h42" stroke="#d4a95e"/><path d="m100 33 4 5-4 5-4-5Z" fill="#e8a9bc" stroke="none"/><g fill="#f5d482" stroke-width="2"><circle cx="71" cy="23" r="3"/><circle cx="100" cy="15" r="3"/><circle cx="129" cy="23" r="3"/></g>' : ''}
     </g>
   </svg>`;
+}
+
+function renderDinosaur(level, happy, gloomy) {
+  const stage = companionStage(level);
+  const skin = gloomy ? '#8b9c98' : '#71b9a4';
+  return `<svg class="companion-svg${happy ? ' is-happy' : ''}${gloomy ? ' is-gloomy' : ''}" data-stage="${stage}" data-kind="dino" viewBox="0 0 200 180" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+  <ellipse cx="105" cy="163" rx="56" ry="6" fill="#789b90" opacity=".18"/>
+  <g class="companion-sparkles" stroke="#e8b451" stroke-width="3" stroke-linecap="round"><path d="M28 48v14m-7-7h14M168 44v14m-7-7h14"/></g>
+  <g class="companion-body" stroke="#395b56" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M136 119q22 23 40 0q-2 44-48 31" fill="${skin}"/>
+  <path d="m143 123 5-14 9 18 13-8-1 14" fill="#edc16a"/>
+  <path d="m77 57-9-14 22 2 5-14 14 11 13-8 7 19" fill="#edc16a"/>
+  <path d="M62 102Q44 99 43 79Q41 51 72 47Q111 37 135 60Q148 72 139 94Q156 118 140 147Q128 163 91 158Q66 153 68 125Z" fill="${skin}"/>
+  <path d="M64 85Q62 65 83 62Q99 61 104 77Q112 97 98 111Q83 130 84 143Q104 155 128 145Q134 131 127 121" fill="#e7e6b7" stroke="none"/>
+  <ellipse cx="90" cy="157" rx="18" ry="7" fill="${skin}"/><ellipse cx="132" cy="156" rx="15" ry="7" fill="${skin}"/>
+  <path d="M79 158v3m8-3v4m37-5v3m8-3v3" stroke="#e7e6b7" stroke-width="3"/>
+  <path d="M62 76h1m17-2h1" stroke-width="4"/>
+  ${gloomy ? '<path d="m110 74 17 4m-15 5h9M52 94q13-6 26 0" fill="none"/>' : happy ? '<path d="M112 81q6-11 12 0" fill="none"/><path d="M51 92q23 26 38-4Z" fill="#b86b69"/><path d="m59 95 4 7 5-5" fill="#fff7dc" stroke-width="1.5"/>' : '<ellipse cx="118" cy="80" rx="5" ry="7" fill="#294a46" stroke="none"/><circle cx="119" cy="78" r="2" fill="white" stroke="none"/><path d="M51 92q17 10 34-1" fill="none"/>'}
+  <ellipse cx="120" cy="96" rx="10" ry="5" fill="#dca88c" stroke="none"/>
+  <g class="companion-arm right"><path d="M135 117q-19-8-18 4q0 8 14 9" fill="${skin}"/></g>
+  <path d="M144 107h3m-2 6h4" stroke="#428d7b"/>
+  ${stage>=2 ? '<path d="M72 115q27 12 62-5l-2 10q-24 12-56 4Z" fill="#e99567"/><path d="m111 123 9 18 8-16" fill="#e99567"/>' : ''}
+  ${stage>=3 ? '<path d="m105 124 4 7 8 1-6 6 1 8-7-4-7 4 1-8-6-6 8-1Z" fill="#f3ce67" stroke-width="2"/>' : ''}
+  ${stage>=4 ? '<path d="M121 51q25-17 32 7l-10 11" fill="#a9cee0"/><path d="m130 47 10-14 8 19" fill="#a9cee0"/>' : ''}
+  ${stage===5 ? '<path d="m72 45-4-21 15 9 9-18 10 17 16-8-4 22Z" fill="#f3ce67"/><path d="m91 30 4 6-4 5-4-5Z" fill="#e99567" stroke="none"/>' : ''}
+  </g></svg>`;
+}
+
+function renderDog(level, happy, gloomy) {
+  const stage = companionStage(level);
+  const mood = gloomy ? 'gloomy' : happy ? 'happy' : 'idle';
+  // 写真の犬の顔つきを保ち、レベルの変化は写真を囲む飾りで示す。
+  return `<div class="companion-dog ${happy ? 'is-happy' : ''}" data-kind="dog" data-stage="${stage}" aria-hidden="true"><div class="dog-portrait" data-mood="${mood}"></div>${stage>1 ? `<span class="dog-medal">${'★'.repeat(stage-1)}</span>` : ''}</div>`;
 }

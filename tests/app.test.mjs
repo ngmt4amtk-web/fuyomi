@@ -17,7 +17,8 @@ const ELEMENT_IDS = [
   'fourth-finger-note', 'hint-button', 'example-button', 'manual-next-button', 'skip-button',
   'quit-button', 'result-summary', 'result-mode-note', 'trouble-list', 'next-suggestion',
   'record-list', 'retry-button', 'back-button', 'intro-dialog', 'intro-staff',
-  'intro-close-button', 'companion', 'companion-art', 'companion-words', 'companion-preview'
+  'intro-close-button', 'companion', 'companion-art', 'companion-words',
+  'companion-chip-fluffy', 'companion-chip-dino', 'companion-chip-dog'
 ];
 
 const note = (midi, stringId, finger) => ({midi, stringId, finger});
@@ -32,6 +33,43 @@ test('相棒はレベル1〜4が共通、5〜8で一段ずつ進化する', () =
   assert.deepEqual([1,2,3,4,5,6,7,8].map(companionStage), [1,1,1,1,2,3,4,5]);
   assert.equal(renderCompanion(1), renderCompanion(4));
   assert.equal(new Set([4,5,6,7,8].map(level => renderCompanion(level))).size, 5);
+});
+
+test('3種類を選べて設定を保存し、再起動時にも復元する', () => {
+  for (const kind of ['fluffy','dino','dog']) {
+    const h = createHarness();
+    h.document.getElementById(`companion-chip-${kind}`).click();
+    const settings = JSON.parse(h.storage.getItem('fuyomi')).settings;
+    assert.equal(settings.companion,kind);
+    h.app.destroy();
+    const restored = createHarness({storedSettings:settings});
+    for (const other of ['fluffy','dino','dog']) {
+      assert.equal(restored.document.getElementById(`companion-chip-${other}`).getAttribute('aria-pressed'),String(kind===other));
+    }
+    restored.app.destroy();
+  }
+  const h=createHarness({storedSettings:{companion:'invalid'}});
+  assert.equal(h.document.getElementById('companion-chip-fluffy').getAttribute('aria-pressed'),'true');
+  h.app.destroy();
+});
+
+test('恐竜と犬も正解・不正解・弾き直しに反応する', async () => {
+  for (const kind of ['dino','dog']) {
+    const h=createHarness({storedSettings:{companion:kind}});
+    await startMicPractice(h,{level:8});
+    const art=h.document.getElementById('companion-art');
+    assert.match(art.innerHTML,new RegExp(`data-kind="${kind}"`));
+    assert.match(art.innerHTML,/data-stage="5"/);
+    holdMidi(h,71);
+    assert.equal(h.document.getElementById('companion').getAttribute('data-reaction'),'miss');
+    assert.match(art.innerHTML,/gloomy/);
+    h.clock.advance(5000);
+    assert.match(art.innerHTML,/gloomy/);
+    armWithSilence(h);
+    holdMidi(h,69);
+    assert.match(art.innerHTML,/is-happy/);
+    h.app.destroy();
+  }
 });
 
 test('レベル6・8は番号なしでも同音異弦の0と4だけを残す', async () => {
@@ -303,10 +341,12 @@ function createHarness({
   phrases = DEFAULT_PHRASES,
   createMicrophone,
   judgeNote,
+  storedSettings,
 } = {}){
   const clock = new FakeClock();
   const document = new FakeDocument();
   const storage = new FakeStorage();
+  if (storedSettings) storage.setItem('fuyomi', JSON.stringify({settings:storedSettings}));
   const toneContext = new FakeToneContext(clock);
   let detection = SILENT;
   let microphoneClosed = false;
@@ -365,6 +405,7 @@ function createHarness({
     clock,
     document,
     mic,
+    storage,
     setDetection(value){ detection = value; },
     get microphoneClosed(){ return microphoneClosed; },
     get phraseCalls(){ return phraseCalls; },
