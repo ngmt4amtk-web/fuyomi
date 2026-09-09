@@ -4,14 +4,14 @@ import {
   canChooseStrings,
   levelStrings,
   makePhrase as defaultMakePhrase,
-} from './phrase.js';
+} from './phrase.js?v=20260909-2';
 import {
   TOL,
   createHolder as defaultCreateHolder,
   createMic as defaultCreateMic,
   detect as defaultDetect,
   judgeNote as defaultJudgeNote,
-} from './pitch.js';
+} from './pitch.js?v=20260909-2';
 import {
   KEYS,
   STRINGS,
@@ -22,8 +22,8 @@ import {
   positionsForMidi,
   stringColor,
 } from './theory.js';
-import { renderStaff as defaultRenderStaff } from './staff.js';
-import { companionStage, COMPANION_NAMES, renderCompanion } from './companion.js';
+import { renderStaff as defaultRenderStaff } from './staff.js?v=20260909-2';
+import { companionStage, COMPANION_NAMES, renderCompanion } from './companion.js?v=20260909-2';
 
 export function createFuyomiApp(dependencies = {}) {
 const window = dependencies.window ?? globalThis.window;
