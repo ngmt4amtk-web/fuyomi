@@ -109,11 +109,31 @@ test('LEVELSは契約どおりの8段階を公開する', () => {
     3: {label: 'レ線だけ', strings: ['D'], maxFinger: 3},
     4: {label: 'ソ線だけ', strings: ['G'], maxFinger: 3},
     5: {label: '選んだ2本', strings: null, choose: {min: 1, max: 2}, preset: ['A', 'E'], maxFinger: 3},
-    6: {label: '選んだ弦で4の指まで', strings: null, choose: {min: 1, max: 4}, preset: ['A'], maxFinger: 4},
+    6: {label: '選んだ弦で4の指まで', strings: null, choose: {min: 1, max: 4}, preset: ['A', 'E'], maxFinger: 4},
     7: {label: '4本ぜんぶ', strings: ['G', 'D', 'A', 'E'], maxFinger: 3},
     8: {label: '4本ぜんぶ・4の指まで', strings: ['G', 'D', 'A', 'E'], maxFinger: 4}
   });
   assert.deepEqual(ALL_STRING_IDS, ['G', 'D', 'A', 'E']);
+});
+
+test('レベル5以降は隣接弦を複数選ぶと毎回移弦し、4弦では前回と別の弦も含む', () => {
+  for (const level of [5,6,7,8]) {
+    for (const key of Object.keys(KEYS)) {
+      let prev=null;
+      const rng=lcg(level*913+key.charCodeAt(0));
+      for(let i=0;i<200;i++) {
+        const phrase=makePhrase({level,key,prev,rng});
+        const used=new Set(phrase.notes.map(n=>n.stringId));
+        assert.ok(used.size>=2,`${level} / ${key} は単弦にしない`);
+        if(prev && level>=7) assert.ok(phrase.notes.some(n=>!prev.notes.some(p=>p.stringId===n.stringId)));
+        prev=phrase;
+      }
+      const first=makePhrase({level,key,rng:()=>0});
+      const next=makePhrase({level,key,prev:first,rng:()=>0});
+      assert.ok(new Set(next.notes.map(n=>n.stringId)).size>=2);
+      assert.notEqual(midiSequence(first),midiSequence(next));
+    }
+  }
 });
 
 test('levelStringsは選べるレベルだけ選択を受け取り、本数が合わなければ既定へ落とす', () => {
@@ -134,9 +154,9 @@ test('levelStringsは選べるレベルだけ選択を受け取り、本数が�
   assert.deepEqual(levelStrings(5, []), ['A', 'E']);
 
   // レベル6は1〜4本。並びは常に低い弦から。
-  assert.deepEqual(levelStrings(6, null), ['A']);
+  assert.deepEqual(levelStrings(6, null), ['A', 'E']);
   assert.deepEqual(levelStrings(6, ['E', 'G']), ['G', 'E']);
-  assert.deepEqual(levelStrings(6, []), ['A']);
+  assert.deepEqual(levelStrings(6, []), ['A', 'E']);
   assert.deepEqual(levelStrings(6, ['A', 'E', 'D', 'G']), ['G', 'D', 'A', 'E']);
 
   assert.throws(() => levelStrings(9), RangeError);

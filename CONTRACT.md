@@ -34,7 +34,7 @@ export const LEVELS = {
   3:{label:'レ線だけ',   strings:['D'],             maxFinger:3},
   4:{label:'ソ線だけ',   strings:['G'],             maxFinger:3},
   5:{label:'選んだ2本',  strings:null, choose:{min:1,max:2}, preset:['A','E'],  maxFinger:3},
-  6:{label:'選んだ弦で4の指まで', strings:null, choose:{min:1,max:4}, preset:['A'], maxFinger:4},
+  6:{label:'選んだ弦で4の指まで', strings:null, choose:{min:1,max:4}, preset:['A','E'], maxFinger:4},
   7:{label:'4本ぜんぶ',  strings:['G','D','A','E'], maxFinger:3},
   8:{label:'4本ぜんぶ・4の指まで', strings:['G','D','A','E'], maxFinger:4}
 };
@@ -57,21 +57,23 @@ export function makePhrase({level, key, length=4, prev=null, rng=Math.random, st
 
 ## js/pitch.js（ゆびいろからの移植・実装済み）
 ```js
-export const TOL = { loose:{hold:225,spread:170,tol:90,conf:0.22}, mid:{300,130,70,0.30}, tight:{400,90,45,0.38} };
-export const RESCUE_MAX_CENTS = 250;  // 第2段の音域外安全弁（decisions.md 採用10・11）
-export function detect(x, sr)          // → {f, conf, rms}  YIN/CMND
+export const TOL = {
+  loose:{hold:225,spread:170,tol:45,conf:0.22},
+  mid:{hold:300,spread:130,tol:40,conf:0.30},
+  tight:{hold:400,spread:90,tol:30,conf:0.38}
+};
+export const RESCUE_MAX_CENTS = 250; // 互換のため残す。現行判定では使用しない。
+export function detect(x, sr)          // → {f, conf, rms} YIN/CMND
 export function median(a)
 export async function createMic()      // → {read(), sampleRate, close(), ctx}
 export function createHolder(cfg)      // → {feed(now,det), progress(), reset(), muteUntil(t)}
 export function judgeNote({freq, targetMidi, candidates, cfg, a4})
-// candidates は非空。現在の調で第1ポジションから出せる4弦すべての音を渡し、
-// 同じmidiは指の少ない運指を代表に1つだけ残す。出題レベルの範囲には狭めない。
 // → {ok:true, cents, oct?:true} | {ok:false, heard:{midi,stringId,finger}, cents}
-// 3段の判定:
-//  1. 目標までの生の距離が |cents| <= cfg.tol なら正解。
-//  2. 生の距離が |cents| <= RESCUE_MAX_CENTS かつ、生の最近傍候補が目標なら正解。
-//  3. 目標までの距離をオクターブで畳み、その距離が |cents| <= cfg.tol なら
-//     {ok:true, cents, oct:true}。第3段に RESCUE_MAX_CENTS は適用しない。
+// 生の距離が min(cfg.tol,49) セント以内なら正解。オクターブを畳んだ距離にも同じ幅を適用。
+// 調内の最近傍への救済はしない。半音の違いは全設定で区別する。
+// heard.midi は全半音中の最近傍。候補にない音の stringId / finger は null。
+// アプリの不正解表示は音名だけを使い、観測できない弦・指を付け足さない。
+
 ```
 
 `createMic()` は `getUserMedia()` 成功後の初期化に失敗した場合、取得済みの全トラックを停止し、
@@ -85,6 +87,7 @@ export function judgeNote({freq, targetMidi, candidates, cfg, a4})
 ```js
 export function renderStaff({key, notes, width, theme, marks})
 // notes = [{midi, stringId, finger, state:'done'|'current'|'todo'|'miss', hint:{stringId,finger,nameJa}|null}]
+// note.forceFinger = true // その音だけ番号を残す。レベル6・8の同音異弦の0/4にappが指定。
 // marks = 'both'（弦の色＋指番号）| 'color'（弦の色だけ）| 'off'（既定。五線だけ）
 // → SVG文字列。五線・ト音記号（自前パス）・調号・音符・符幹・加線・臨時記号・状態の描き分け。
 // 指番号は data-role="finger"。五線の上端より上に置き、上加線へ出た音だけ自分の加線ぶん持ち上げる。
@@ -117,3 +120,9 @@ export function createFuyomiApp(dependencies = {}) // → {destroy()}
 
 ## tests/run.mjs
 node 22 の標準機能だけ（`node:test` / `node:assert`）。`node tests/run.mjs` が exit 0 で緑。
+
+## 2026-09-09の追加契約
+
+- 4音のレベル5以降で隣接弦を複数選んだ場合、毎回2本以上の弦を含める。4弦のときは前回にない弦も含める。
+- 非隣接弦だけを選んだ場合、従来の4度以内の制約を優先する。1本を選んだ場合もその選択を守る。
+- js/companion.js は純粋なSVG文字列生成。DOMの操作はapp.jsに集約する。

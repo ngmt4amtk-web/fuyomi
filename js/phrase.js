@@ -16,7 +16,7 @@ export const LEVELS = {
   3: {label: 'レ線だけ', strings: ['D'], maxFinger: 3},
   4: {label: 'ソ線だけ', strings: ['G'], maxFinger: 3},
   5: {label: '選んだ2本', strings: null, choose: {min: 1, max: 2}, preset: ['A', 'E'], maxFinger: 3},
-  6: {label: '選んだ弦で4の指まで', strings: null, choose: {min: 1, max: 4}, preset: ['A'], maxFinger: 4},
+  6: {label: '選んだ弦で4の指まで', strings: null, choose: {min: 1, max: 4}, preset: ['A', 'E'], maxFinger: 4},
   7: {label: '4本ぜんぶ', strings: ['G', 'D', 'A', 'E'], maxFinger: 3},
   8: {label: '4本ぜんぶ・4の指まで', strings: ['G', 'D', 'A', 'E'], maxFinger: 4}
 };
@@ -43,6 +43,7 @@ const TONIC_PITCH_CLASS = {C: 0, G: 7, D: 2, A: 9};
 const STABLE_INTERVALS = new Set([0, 4, 7]);
 const RANDOM_ATTEMPTS = 64;
 const STRING_ORDER = new Map(STRINGS.map((string, index) => [string.id, index]));
+const crossingPools = new Map();
 
 const pitchClass = midi => ((midi % 12) + 12) % 12;
 
@@ -101,11 +102,14 @@ function isStable(tone, key) {
   return STABLE_INTERVALS.has(interval);
 }
 
-function makeCadences(tones, key) {
+function makeCadences(tones, key, allowLeap = false) {
   return tones
     .filter(tone => isStable(tone, key))
     .flatMap(end => tones
-      .filter(approach => Math.abs(approach.diatonic - end.diatonic) === 1)
+      .filter(approach => {
+        const interval = Math.abs(approach.diatonic - end.diatonic);
+        return interval >= 1 && interval <= (allowLeap ? 3 : 1);
+      })
       .map(approach => ({approach, end})));
 }
 
@@ -132,9 +136,9 @@ function randomToneSequence(tones, cadences, length, rng) {
    */
   const stepWeight = 5 + (unitRandom(rng) * 4);
   const cadence = pick(cadences, rng);
-  // 終止音から逆向きに組むことで、最後は必ず2度進行で安定音へ着地する。
+  // 終止音から逆向きに組み、移弦では終わりの跳躍も許して形を増やす。
   const reversed = [cadence.end, cadence.approach];
-  let leaps = 0;
+  let leaps = Number(Math.abs(cadence.end.diatonic - cadence.approach.diatonic) >= 2);
 
   while (reversed.length < length) {
     const next = reversed[reversed.length - 1];
@@ -223,16 +227,81 @@ export function makePhrase({level, key, length = 4, prev = null, rng = Math.rand
 
   const stringIds = levelStrings(level, strings);
   const tones = makeToneSet({...levelConfig, strings: stringIds}, key);
-  const cadences = makeCadences(tones, key);
+  const cadences = makeCadences(tones, key, level >= 5 && stringIds.length > 1);
   const prevMidis = previousMidis(prev);
+  const previousStrings = new Set(Array.isArray(prev?.notes) ? prev.notes.map(note => note.stringId) : []);
+  // 隣り合わない弦だけを選ぶと、4度以内では渡れない。そこは従来の音程制約を守る。
+  const crossing = level >= 5 && stringIds.some((id, i) =>
+    i > 0 && STRING_ORDER.get(id) - STRING_ORDER.get(stringIds[i - 1]) === 1);
+  const hasCrossing = sequence => new Set(addFingerings(sequence).map(note => note.stringId)).size >= 2;
+
+  // 4音の移弦は候補を列挙して均等に選ぶ。単弦フレーズの棄却だけでは一部の形へ偏る。
+  if (crossing && length === 4) {
+    const poolKey = `${level}:${key}:${stringIds.join('')}`;
+    if (!crossingPools.has(poolKey)) {
+      const pool = [];
+      const collect = (sequence, leaps) => {
+        if (sequence.length === length) {
+          if (isStable(sequence.at(-1), key) && hasCrossing(sequence)) pool.push(addFingerings(sequence));
+          return;
+        }
+        for (const tone of tones) {
+          const last = sequence.at(-1);
+          const interval = last ? Math.abs(last.diatonic - tone.diatonic) : 0;
+          if (interval > 3 || (interval >= 2 && leaps >= 1)) continue;
+          if (tone.midi === last?.midi && tone.midi === sequence.at(-2)?.midi) continue;
+          collect([...sequence, tone], leaps + Number(interval >= 2));
+        }
+      };
+      collect([], 0);
+      crossingPools.set(poolKey, pool);
+    }
+    const pool = crossingPools.get(poolKey).filter(notes => !sameMidis(notes, prevMidis));
+    const varied = pool.filter(notes => notes.some(note => !previousStrings.has(note.stringId)));
+    const choices = varied.length ? varied : pool;
+    if (choices.length) {
+      // 初期値が近い乱数器でも特定の音域へ偏らないよう、独立する2値を合わせる。
+      let randomBits = (unitRandom(rng) * 0x100000000) ^ (unitRandom(rng) * 0x100000000);
+      randomBits = Math.imul(randomBits ^ (randomBits >>> 16), 0x85ebca6b);
+      randomBits = Math.imul(randomBits ^ (randomBits >>> 13), 0xc2b2ae35);
+      const index = Math.floor(((randomBits ^ (randomBits >>> 16)) >>> 0) / 0x100000000 * choices.length);
+      return {notes:choices[index].map(note => ({...note})), key, level, strings:stringIds};
+    }
+  }
 
   for (let attempt = 0; attempt < RANDOM_ATTEMPTS; attempt++) {
     const sequence = randomToneSequence(tones, cadences, length, rng);
-    if (!sameMidis(sequence, prevMidis)) {
+    const positions = addFingerings(sequence);
+    const variesStrings = positions.some(note => !previousStrings.has(note.stringId));
+    if (!sameMidis(sequence, prevMidis) && (!crossing || hasCrossing(sequence))
+      && (attempt >= 32 || previousStrings.size === 0 || variesStrings || stringIds.every(id => previousStrings.has(id)))) {
       return {notes: addFingerings(sequence), key, level, strings: stringIds};
     }
   }
 
-  const fallback = deterministicFallback(cadences, length, prevMidis);
+  // 固定乱数でも同じ弦だけへ戻らないよう、音楽的制約を満たす移弦フレーズを探索する。
+  if (crossing) {
+    let visits = 0;
+    const search = (sequence, leaps) => {
+      if (++visits > 20000) return null;
+      if (sequence.length === length) {
+        return isStable(sequence.at(-1), key) && !sameMidis(sequence, prevMidis) && hasCrossing(sequence)
+          ? sequence : null;
+      }
+      for (const tone of tones) {
+        const last = sequence.at(-1);
+        const interval = last ? Math.abs(last.diatonic - tone.diatonic) : 0;
+        if (interval > 3 || (interval >= 2 && leaps >= 1)) continue;
+        if (tone.midi === last?.midi && tone.midi === sequence.at(-2)?.midi) continue;
+        const found = search([...sequence, tone], leaps + Number(interval >= 2));
+        if (found) return found;
+      }
+      return null;
+    };
+    const sequence = search([], 0);
+    if (sequence) return {notes:addFingerings(sequence), key, level, strings:stringIds};
+  }
+
+  const fallback = deterministicFallback(makeCadences(tones, key), length, prevMidis);
   return {notes: addFingerings(fallback), key, level, strings: stringIds};
 }

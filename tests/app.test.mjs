@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import {createFuyomiApp} from '../js/app.js';
 import {mtof} from '../js/theory.js';
+import {companionStage, renderCompanion} from '../js/companion.js';
 
 const ELEMENT_IDS = [
   'setup-screen', 'check-screen', 'practice-screen', 'result-screen', 'settings-form',
@@ -16,7 +17,7 @@ const ELEMENT_IDS = [
   'fourth-finger-note', 'hint-button', 'example-button', 'manual-next-button', 'skip-button',
   'quit-button', 'result-summary', 'result-mode-note', 'trouble-list', 'next-suggestion',
   'record-list', 'retry-button', 'back-button', 'intro-dialog', 'intro-staff',
-  'intro-close-button'
+  'intro-close-button', 'companion', 'companion-art', 'companion-words', 'companion-preview'
 ];
 
 const note = (midi, stringId, finger) => ({midi, stringId, finger});
@@ -26,6 +27,89 @@ const DEFAULT_PHRASES = [
   [note(73, 'A', 2), note(71, 'A', 1), note(69, 'A', 0), note(73, 'A', 2)]
 ];
 const SILENT = Object.freeze({f:-1, conf:0, rms:0});
+
+test('相棒はレベル1〜4が共通、5〜8で一段ずつ進化する', () => {
+  assert.deepEqual([1,2,3,4,5,6,7,8].map(companionStage), [1,1,1,1,2,3,4,5]);
+  assert.equal(renderCompanion(1), renderCompanion(4));
+  assert.equal(new Set([4,5,6,7,8].map(level => renderCompanion(level))).size, 5);
+});
+
+test('レベル6・8は番号なしでも同音異弦の0と4だけを残す', async () => {
+  const phrases = [[note(76,'A',4),note(76,'E',0),note(71,'A',1),note(83,'E',4)]];
+  for (const level of [5,6,8]) {
+    for (const marks of ['off','color']) {
+      const h = createHarness({phrases});
+      h.document.getElementById('marks-select').value = marks;
+      await startMicPractice(h,{level});
+      const svg = h.document.getElementById('staff-wrap').innerHTML;
+      const labels = [...svg.matchAll(/data-role="finger"[^>]*data-finger="(\d)"/g)].map(m=>m[1]);
+      assert.deepEqual(labels, level===5 ? [] : ['4','0']);
+      h.app.destroy();
+    }
+  }
+});
+
+test('調にないナチュラルも吹き出しが正しく言い当てる', async () => {
+  const h = createHarness({phrases:[[note(73,'A',2),note(74,'A',3),note(71,'A',1),note(69,'A',0)]]});
+  await startMicPractice(h);
+  holdMidi(h,72);
+  assert.equal(h.document.getElementById('companion-words').textContent,'ドの音に聞こえるよ');
+  assert.equal(h.document.getElementById('note-count').textContent,'1 / 4音');
+  h.app.destroy();
+});
+
+test('相棒は4音目を含む全正解に反応し、持続音で二重反応しない', async () => {
+  const h = createHarness();
+  await startMicPractice(h);
+  const companion = h.document.getElementById('companion');
+  for (const note of DEFAULT_PHRASES[0]) {
+    armWithSilence(h);
+    holdMidi(h, note.midi);
+    assert.equal(companion.getAttribute('data-reaction'), 'happy');
+    h.clock.advance(900);
+    assert.equal(companion.getAttribute('data-reaction'), 'idle');
+  }
+  h.document.getElementById('quit-button').click();
+  assert.equal(h.document.getElementById('companion-art').innerHTML, '');
+  h.app.destroy();
+});
+
+test('不正解の吹き出しは無期限に残り、途切れた後の弾き直し開始で消える', async () => {
+  const h = createHarness();
+  await startMicPractice(h);
+  const companion = h.document.getElementById('companion');
+  const words = h.document.getElementById('companion-words');
+  holdMidi(h, 71);
+  assert.equal(companion.getAttribute('data-reaction'), 'miss');
+  assert.equal(words.textContent, 'シの音に聞こえるよ');
+  h.clock.advance(10000);
+  holdMidi(h, 71);
+  assert.equal(companion.getAttribute('data-reaction'), 'miss');
+  armWithSilence(h);
+  h.clock.advance(10000);
+  assert.equal(companion.getAttribute('data-reaction'), 'miss');
+  h.setDetection(voiced(69));
+  h.clock.frame(20);
+  assert.equal(companion.getAttribute('data-reaction'), 'idle');
+  holdMidi(h, 69);
+  assert.equal(companion.getAttribute('data-reaction'), 'happy');
+  h.app.destroy();
+});
+
+test('前の正解演出のタイマーが、次の不正解の吹き出しを消さない', async () => {
+  const h = createHarness();
+  await startMicPractice(h);
+  holdMidi(h, 69);
+  h.clock.advance(300);
+  armWithSilence(h);
+  holdMidi(h, 73);
+  assert.equal(h.document.getElementById('companion').getAttribute('data-reaction'), 'miss');
+  h.clock.advance(1500);
+  assert.equal(h.document.getElementById('companion-words').textContent, 'ド♯の音に聞こえるよ');
+  h.document.getElementById('skip-button').click();
+  assert.equal(h.document.getElementById('companion').getAttribute('data-reaction'), 'idle');
+  h.app.destroy();
+});
 
 class FakeClassList {
   constructor(){ this.values = new Set(); }
@@ -392,7 +476,7 @@ test('A: レベル1のD5に正確なE5を弾くと不正解になる', async () 
 
   holdMidi(harness, 76);
 
-  assert.match(harness.document.getElementById('practice-status').textContent, /^いまのは ミ の高さに聞こえたよ/);
+  assert.match(harness.document.getElementById('practice-status').textContent, /^いまのは ミ の音に聞こえるよ/);
   assert.equal(harness.document.getElementById('note-count').textContent, '1 / 4音');
 });
 
@@ -542,7 +626,6 @@ test('I: 弦を選べないレベルではチップを隠し、選択を出題�
 
   document.getElementById('level-select').value = '6';
   form.dispatch('change');
-  document.getElementById('string-chip-E').click();
   assert.deepEqual(pressedStrings(document), ['A', 'E']);
 
   document.getElementById('level-select').value = '8';

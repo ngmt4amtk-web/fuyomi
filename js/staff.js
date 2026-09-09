@@ -373,8 +373,9 @@ export function renderStaff({ key, notes, width, theme, marks } = {}) {
     contentTop = Math.min(contentTop, noteTop);
   }
 
-  if (showFinger) {
+  if (showFinger || plottedNotes.some(entry => entry.note.forceFinger)) {
     for (const entry of plottedNotes) {
+      if (!showFinger && !entry.note.forceFinger) continue;
       if (!Number.isInteger(entry.note.finger)) continue;
       /*
        * 五線の上端（0）より上を最低線にする。音符の上端だけで決めると、五線の中に

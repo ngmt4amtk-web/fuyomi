@@ -1,7 +1,7 @@
 export const TOL = {
-  loose: {label:'とてもゆるい', hold:225, spread:170, tol:90, conf:0.22},
-  mid:   {label:'ゆるい',       hold:300, spread:130, tol:70, conf:0.30},
-  tight: {label:'ふつう',       hold:400, spread:90,  tol:45, conf:0.38}
+  loose: {label:'とてもゆるい', hold:225, spread:170, tol:45, conf:0.22},
+  mid:   {label:'ゆるい',       hold:300, spread:130, tol:40, conf:0.30},
+  tight: {label:'ふつう',       hold:400, spread:90,  tol:30, conf:0.38}
 };
 
 export const RESCUE_MAX_CENTS = 250;
@@ -202,50 +202,19 @@ export function judgeNote({freq, targetMidi, candidates, cfg, a4 = 442}){
     if(!cand.some(current => current.midi === candidate.midi)) cand.push(candidate);
   });
 
-  const dist = (midi, allowOctave) => {
-    const raw = centsFromMidi(freq, midi, a4);
-    if(!allowOctave) return raw;
-    // 1200セント周期へ畳むことで、上下どちらのオクターブでも同じ基準で比較する。
-    return ((((raw + 600) % 1200) + 1200) % 1200) - 600;
-  };
-
   const targetCents = centsFromMidi(freq, targetMidi, a4);
+  // 半音の中点（50セント）を越えた音は、調に含まれなくても別の音として扱う。
+  // 「ゆるさ」は中点をまたがない範囲と保持時間で作り、調内の最近傍へ寄せない。
+  const tolerance = Math.min(cfg.tol, 49);
+  if (Math.abs(targetCents) <= tolerance) return {ok:true, cents:targetCents};
 
-  // 1段目は初心者向けの許容幅をそのまま適用する。
-  if(Math.abs(targetCents) <= cfg.tol) return {ok:true, cents:targetCents};
+  // 倍音救済でも同じ半音境界を守る。ナチュラルの倍音をシャープへ救済しない。
+  const octaveCents = ((((targetCents + 600) % 1200) + 1200) % 1200) - 600;
+  if (Math.abs(octaveCents) <= tolerance) return {ok:true, cents:octaveCents, oct:true};
 
-  // 有限な候補集合の端では最寄り判定が無限に広がるため、救済だけに距離上限を付ける。
-  const rescueAllowed = Math.abs(targetCents) <= RESCUE_MAX_CENTS;
-
-  // 2段目は、候補の中で目標が最も近ければ境界上の揺れを正解にする。
-  let near = cand[0], nearCents = dist(cand[0].midi, false);
-  cand.forEach(candidate => {
-    const current = dist(candidate.midi, false);
-    if(Math.abs(current) < Math.abs(nearCents)){
-      near = candidate;
-      nearCents = current;
-    }
-  });
-  if(rescueAllowed && near.midi === targetMidi) return {ok:true, cents:targetCents};
-
-  // 3段目は、生の距離ではなくオクターブを畳んだ目標距離で倍音を救済する。
-  const octaveCents = dist(targetMidi, true);
-  if(Math.abs(octaveCents) <= cfg.tol){
-    return {ok:true, cents:octaveCents, oct:true};
-  }
-
-  // 外れた音の報告では、候補それぞれについてオクターブを畳んだ最近傍も求める。
-  let nearHarmonic = cand[0], nearHarmonicCents = dist(cand[0].midi, true);
-  cand.forEach(candidate => {
-    const current = dist(candidate.midi, true);
-    if(Math.abs(current) < Math.abs(nearHarmonicCents)){
-      nearHarmonic = candidate;
-      nearHarmonicCents = current;
-    }
-  });
-  // 倍音用の距離を優先すると、実際に鳴った近い音とは別の低い同名音を報告してしまう。
-  if(Math.abs(nearCents) <= 250){
-    return {ok:false, heard:near, cents:nearCents};
-  }
-  return {ok:false, heard:nearHarmonic, cents:nearHarmonicCents};
+  const midi = Math.round(69 + 12 * Math.log2(freq / a4));
+  // 調にない音に架空の弦・指を割り当てない。マイクで分かるのは音高だけ。
+  const heard = cand.find(candidate => candidate.midi === midi)
+    ?? {midi, stringId:null, finger:null};
+  return {ok:false, heard, cents:centsFromMidi(freq, midi, a4)};
 }

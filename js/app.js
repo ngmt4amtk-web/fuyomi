@@ -23,6 +23,7 @@ import {
   stringColor,
 } from './theory.js';
 import { renderStaff as defaultRenderStaff } from './staff.js';
+import { companionStage, COMPANION_NAMES, renderCompanion } from './companion.js';
 
 export function createFuyomiApp(dependencies = {}) {
 const window = dependencies.window ?? globalThis.window;
@@ -114,6 +115,10 @@ const elements = {
   holdTrack: byId('hold-track'),
   holdFill: byId('hold-fill'),
   practiceStatus: byId('practice-status'),
+  companion: byId('companion'),
+  companionArt: byId('companion-art'),
+  companionWords: byId('companion-words'),
+  companionPreview: byId('companion-preview'),
   hintPanel: byId('hint-panel'),
   hintName: byId('hint-name'),
   hintFingering: byId('hint-fingering'),
@@ -471,6 +476,9 @@ function stringsLabelText(stringIds) {
 
 function updateLevelDescription() {
   const level = selectedLevel();
+  if (elements.companionPreview) {
+    elements.companionPreview.innerHTML = `${renderCompanion(level)}<div><strong>${COMPANION_NAMES[companionStage(level) - 1]}の相棒</strong><p>1音できるたび、一緒によろこぶ。<br>レベル5から、ひとつずつおめかし。</p></div>`;
+  }
   const stringIds = levelStrings(level, pickedStrings);
   const where = `第1ポジションで、${stringsLabelText(stringIds)}を使います。`;
   elements.levelDescription.textContent = LEVELS[level].maxFinger >= 4
@@ -513,6 +521,8 @@ function stopOscillators() {
 
 function closeRuntime() {
   clearTimers();
+  companionReaction += 1;
+  if (elements.companionArt) elements.companionArt.innerHTML = '';
   if (state.animationFrame) cancelAnimationFrame(state.animationFrame);
   state.animationFrame = 0;
   stopOscillators();
@@ -670,6 +680,7 @@ function beginPractice(token, listenMode) {
   }
 
   showScreen('practice');
+  renderPracticeCompanion();
   loadPhrase();
   if (state.listenMode && !state.animationFrame) startAudioLoop(token);
 }
@@ -737,6 +748,12 @@ function processPracticeAudio(now, detection, token) {
   if (!state.holder || token !== state.sessionId) return;
   const tolerance = TOL[state.config.tolerance];
   const voiced = detection.f > 0 && detection.conf > tolerance.conf;
+
+  // 外した持続音の続きでは消さず、無声を挟んだ次の発音で吹き出しを閉じる。
+  if (companionMiss && now >= state.voiceMuteUntil) {
+    if (!voiced) companionNeedsSilence = false;
+    else if (!companionNeedsSilence) renderPracticeCompanion();
+  }
 
   if (state.processing) {
     // 表示待ちの間も無声だけは holder へ渡し、判定後の再武装を見落とさない。
@@ -811,6 +828,8 @@ function startAudioLoop(token) {
 
 function switchPracticeToManual() {
   if (!state.listenMode) return;
+  companionReaction += 1;
+  renderPracticeCompanion();
   state.listenMode = false;
   if (state.animationFrame) cancelAnimationFrame(state.animationFrame);
   state.animationFrame = 0;
@@ -824,11 +843,36 @@ function switchPracticeToManual() {
   renderPractice();
 }
 
+let companionReaction = 0;
+let companionMiss = false;
+let companionNeedsSilence = false;
+
+function renderPracticeCompanion(happy = false, mode = 'mic', heardMidi = null) {
+  companionMiss = heardMidi !== null;
+  if (!elements.companionArt) return;
+  // SVGを入れ替えると、前のジャンプの途中でも次の正解に必ず反応できる。
+  elements.companionArt.innerHTML = renderCompanion(state.config.level, happy, companionMiss);
+  elements.companion.setAttribute('data-reaction', companionMiss ? 'miss' : happy ? 'happy' : 'idle');
+  elements.companionWords.textContent = companionMiss ? `${noteNameJa(heardMidi)}の音に聞こえるよ` : happy
+    ? (mode === 'mic' ? 'できたね！' : '一歩ずつ！')
+    : 'いっしょに、ひとつずつ。';
+}
+
+function celebrateCompanion(mode, token) {
+  const reaction = ++companionReaction;
+  renderPracticeCompanion(true, mode);
+  // 次の音の受付は待たせない。古い演出の終了が新しい正解を消さないよう世代を照合する。
+  later(() => {
+    if (reaction === companionReaction) renderPracticeCompanion();
+  }, 850, token);
+}
+
 function passCurrentNote(mode, token = state.sessionId) {
   if (state.processing || token !== state.sessionId) return;
   const record = currentRecord();
   if (!record) return;
   record.outcome = 'passed';
+  celebrateCompanion(mode, token);
   state.outcomes[state.noteIndex] = 'passed';
   state.processing = true;
   state.missFlash = false;
@@ -871,14 +915,13 @@ function missCurrentNote(result, token) {
   updateHoldProgress(0);
 
   const heard = result.heard;
-  if (!heard
-    || !Number.isFinite(heard.midi)
-    || typeof heard.stringId !== 'string'
-    || !Number.isInteger(heard.finger)) {
+  if (!heard || !Number.isFinite(heard.midi)) {
     throw new TypeError('judgeNote は不合格時に heard を返す契約です');
   }
-  const stringLabel = STRING_BY_ID.get(heard.stringId)?.label || `${heard.stringId}線`;
-  elements.practiceStatus.textContent = `いまのは ${noteNameJa(heard.midi)} の高さに聞こえたよ（${stringLabel}の${heard.finger}の高さ）`;
+  companionReaction += 1;
+  companionNeedsSilence = true;
+  renderPracticeCompanion(false, 'mic', heard.midi);
+  elements.practiceStatus.textContent = `いまのは ${noteNameJa(heard.midi)} の音に聞こえるよ。`;
   renderPractice();
 
   later(() => {
@@ -894,6 +937,8 @@ function skipCurrentNote() {
   const record = currentRecord();
   if (!record) return;
   record.outcome = 'skipped';
+  companionReaction += 1;
+  renderPracticeCompanion();
   state.outcomes[state.noteIndex] = 'skipped';
   state.processing = true;
   state.holder?.reset();
@@ -992,6 +1037,10 @@ function buildStaffNotes() {
       finger: note.finger,
       state: noteState,
       hint,
+      // 0と4の選択は音高では区別できないため、番号非表示でも勧める運指を残す。
+      forceFinger: [6, 8].includes(state.config.level) && [0, 4].includes(note.finger)
+        && positionsForMidi(note.midi, state.config.key).some(position => position.finger !== note.finger
+          && [0, 4].includes(position.finger)),
     };
   });
 }

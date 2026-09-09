@@ -89,16 +89,33 @@ async function withBrowserAudio({getUserMedia, AudioContext}, callback){
   }
 }
 
-test('TOL はゆびいろで確定した3段の値を保つ', () => {
+test('TOL は半音を区別できる幅で3段のゆるさを持つ', () => {
   assert.deepEqual(TOL, {
-    loose: {label:'とてもゆるい', hold:225, spread:170, tol:90, conf:0.22},
-    mid:   {label:'ゆるい',       hold:300, spread:130, tol:70, conf:0.30},
-    tight: {label:'ふつう',       hold:400, spread:90,  tol:45, conf:0.38}
+    loose: {label:'とてもゆるい', hold:225, spread:170, tol:45, conf:0.22},
+    mid:   {label:'ゆるい',       hold:300, spread:130, tol:40, conf:0.30},
+    tight: {label:'ふつう',       hold:400, spread:90,  tol:30, conf:0.38}
   });
 });
 
 test('RESCUE_MAX_CENTS は250セントを公開する', () => {
   assert.equal(RESCUE_MAX_CENTS, 250);
+});
+
+test('全音域・全設定で半音違いを区別し、倍音でも境界を越えて救済しない', () => {
+  for (const cfg of Object.values(TOL)) {
+    for (let targetMidi=55; targetMidi<=83; targetMidi++) {
+      for (const octave of [-12,0,12]) {
+        for (const shift of [-100,-65,65,100]) {
+          const result=judgeNote({freq:frequencyForMidi(targetMidi+octave)*2**(shift/1200),targetMidi,candidates:ALL_FIRST_POSITION_CANDIDATES,cfg,a4:A4});
+          assert.equal(result.ok,false,`${cfg.label}: ${targetMidi} / ${octave} / ${shift}`);
+          assert.equal(result.heard.midi,targetMidi+octave+Math.sign(shift));
+        }
+        for (const shift of [-25,0,25]) {
+          assert.equal(judgeNote({freq:frequencyForMidi(targetMidi+octave)*2**(shift/1200),targetMidi,candidates:ALL_FIRST_POSITION_CANDIDATES,cfg,a4:A4}).ok,true);
+        }
+      }
+    }
+  }
 });
 
 test('detect は3種の合成音を8音とも検出し、誤差中央値が5セント以内', async t => {
@@ -317,7 +334,7 @@ test('judgeNote は目標から260セントなら最近傍でも救済しない'
   assert.equal(result.ok, false);
 });
 
-test('judgeNote の第1段は救済上限を超えても cfg.tol 以内なら正解にする', () => {
+test('judgeNote の許容幅を広げても半音違いを救済しない', () => {
   const result = judgeNote({
     freq:frequencyForMidi(74) * Math.pow(2, 260 / 1200),
     targetMidi:74,
@@ -326,8 +343,8 @@ test('judgeNote の第1段は救済上限を超えても cfg.tol 以内なら正
     a4:A4
   });
 
-  assert.equal(result.ok, true);
-  assert.ok(Math.abs(result.cents - 260) < 1e-9);
+  assert.equal(result.ok, false);
+  assert.equal(result.heard.midi, 77);
 });
 
 test('judgeNote は許容幅・最近傍・オクターブの3段で救済し、実音を報告する', async t => {
@@ -355,15 +372,15 @@ test('judgeNote は許容幅・最近傍・オクターブの3段で救済し、
   });
 
   await t.test('少しずれは許容幅で救済', () => {
-    const result = judge(frequencyForMidi(69) * Math.pow(2, 80 / 1200));
+    const result = judge(frequencyForMidi(69) * Math.pow(2, 35 / 1200));
     assert.equal(result.ok, true);
-    assert.ok(Math.abs(result.cents - 80) < 1e-9);
+    assert.ok(Math.abs(result.cents - 35) < 1e-9);
   });
 
-  await t.test('許容幅外でも候補中の最近傍なら救済', () => {
+  await t.test('候補中で最近傍でも半音違いは不正解', () => {
     const result = judge(frequencyForMidi(69) * Math.pow(2, 95 / 1200));
-    assert.equal(result.ok, true);
-    assert.ok(Math.abs(result.cents - 95) < 1e-9);
+    assert.equal(result.ok, false);
+    assert.equal(result.heard.midi, 70);
   });
 
   await t.test('1オクターブ下は畳んだ距離で第3段が救済する', () => {
