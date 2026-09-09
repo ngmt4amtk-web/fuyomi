@@ -11,6 +11,6 @@ export function renderCompanion(level, happy = false, gloomy = false, kind = 'fl
   const selected = COMPANIONS.includes(kind) ? kind : 'fluffy';
   const stage = companionStage(level);
   const mood = gloomy ? 'gloomy' : happy ? 'happy' : 'idle';
-  // 絵柄と表情は生成素材を使い、レベルの進行は周囲の飾りと星で共通に示す。
-  return `<div class="companion-dog ${happy && !gloomy ? 'is-happy' : ''}" data-kind="${selected}" data-stage="${stage}" aria-hidden="true"><div class="dog-portrait" data-mood="${mood}"></div>${stage > 1 ? `<span class="dog-medal">${'★'.repeat(stage - 1)}</span>` : ''}</div>`;
+  // 各段階に描き下ろした3表情を使う。枠や星で段階の絵を代用しない。
+  return `<div class="companion-dog ${gloomy ? 'is-gloomy' : happy ? 'is-happy' : ''}" data-kind="${selected}" data-stage="${stage}" aria-hidden="true"><div class="dog-portrait" data-mood="${mood}"></div>${happy && !gloomy ? `<span class="reaction-particles">${Array.from({length: stage + 4}, (_, i) => `<i style="--i:${i};--count:${stage + 4}"></i>`).join('')}</span>` : ''}</div>`;
 }

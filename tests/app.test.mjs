@@ -493,7 +493,7 @@ async function passWholeSession(harness, phrases, misses = new Set()){
         // 4音そろうと完了の和音が鳴る。和音の予約はawaitの先なので、
         // 時計を進める前にマイクロタスクを流して次フレーズのタイマーを登録させる。
         await flushAsync();
-        harness.clock.advance(800);
+        harness.clock.advance(1000);
         if(phraseIndex < 2) armWithSilence(harness);
       }
     }

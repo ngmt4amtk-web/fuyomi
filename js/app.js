@@ -23,7 +23,7 @@ import {
   stringColor,
 } from './theory.js';
 import { renderStaff as defaultRenderStaff } from './staff.js?v=20260909-2';
-import { COMPANIONS, renderCompanion } from './companion.js?v=20260909-4';
+import { COMPANIONS, renderCompanion } from './companion.js?v=20260909-5';
 
 export function createFuyomiApp(dependencies = {}) {
 const window = dependencies.window ?? globalThis.window;
@@ -856,7 +856,7 @@ let companionNeedsSilence = false;
 function renderPracticeCompanion(happy = false, mode = 'mic', heardMidi = null) {
   companionMiss = heardMidi !== null;
   if (!elements.companionArt) return;
-  // SVGを入れ替えると、前のジャンプの途中でも次の正解に必ず反応できる。
+  // 表情の要素を入れ替えると、前のジャンプの途中でも次の正解に必ず反応できる。
   elements.companionArt.innerHTML = renderCompanion(state.config.level, happy, companionMiss, state.config.companion);
   elements.companion.setAttribute('data-reaction', companionMiss ? 'miss' : happy ? 'happy' : 'idle');
   elements.companionWords.textContent = companionMiss ? `${noteNameJa(heardMidi)}の音に聞こえるよ` : happy
@@ -1205,6 +1205,26 @@ function scheduleTone(context, midi, start, duration, volume = TONE_VOLUME) {
   oscillator.addEventListener('ended', () => state.oscillators.delete(oscillator), { once: true });
 }
 
+// 鐘の基音・オクターブ・きらめきを別々に減衰させ、短い合図にも厚みを持たせる。
+// 余韻は指定時間内で閉じ、次の発音の受付を演出で遅らせない。
+function scheduleBell(context, midi, start, duration, volume) {
+  [[1, .72], [2, .2], [3, .08]].forEach(([ratio, weight]) => {
+    const oscillator = context.createOscillator();
+    const gain = context.createGain();
+    oscillator.type = 'sine';
+    oscillator.frequency.setValueAtTime(mtof(midi, state.config.a4) * ratio, start);
+    gain.gain.setValueAtTime(.0001, start);
+    gain.gain.exponentialRampToValueAtTime(volume * weight, start + .006);
+    gain.gain.exponentialRampToValueAtTime(.0001, start + duration);
+    oscillator.connect(gain);
+    gain.connect(context.destination);
+    oscillator.start(start);
+    oscillator.stop(start + duration + .01);
+    state.oscillators.add(oscillator);
+    oscillator.addEventListener('ended', () => { state.oscillators.delete(oscillator); oscillator.disconnect(); gain.disconnect(); }, { once: true });
+  });
+}
+
 async function playSequence(midis, {
   noteDuration = 0.52,
   gap = 0.09,
@@ -1213,6 +1233,7 @@ async function playSequence(midis, {
   tailDuration = 0,
   muteMargin = 160,
   holderMute = true,
+  bell = false,
 } = {}) {
   const token = state.sessionId;
   try {
@@ -1227,13 +1248,14 @@ async function playSequence(midis, {
     }
     stopOscillators();
     const start = context.currentTime + 0.035;
+    const voice = bell ? scheduleBell : scheduleTone;
     if (chord) {
-      midis.forEach((midi) => scheduleTone(context, midi, start, noteDuration, volume));
+      midis.forEach((midi) => voice(context, midi, start, noteDuration, volume));
     } else {
       midis.forEach((midi, index) => {
         // 最後の音だけ余韻を足すと、速い上昇が「ピロピロ〜ん」と閉じて終わりが分かる。
         const isLast = index === midis.length - 1;
-        scheduleTone(
+        voice(
           context,
           midi,
           start + index * (noteDuration + gap),
@@ -1287,11 +1309,14 @@ async function playExample(allNotes) {
 }
 
 async function playCompletionChord() {
-  const tonic = TONIC_MIDI[state.config.key];
-  return playSequence([tonic, tonic + 4, tonic + 7], {
-    noteDuration: 0.42,
-    chord: true,
+  const tonic = TONIC_MIDI[state.config.key] + 12;
+  // 分散和音に余韻を重ねる。ミュート終了後に次のフレーズを出す既存の経路を使う。
+  return playSequence([tonic, tonic + 4, tonic + 7, tonic + 12], {
+    noteDuration: 0.12,
+    gap: -0.035,
+    tailDuration: 0.24,
     volume: CHORD_VOLUME,
+    bell: true,
   });
 }
 
@@ -1308,6 +1333,7 @@ async function playPassChime() {
     // 次の音へ進む300msより先に鳴り終わらせ、生徒が弾き始める前に道をあける。
     tailDuration: 0.1,
     volume: PASS_CHIME_VOLUME,
+    bell: true,
     muteMargin: 0,
     holderMute: false,
   });
