@@ -20,7 +20,7 @@ export function midiToStaff(midi, key)
 //   C5=5 D5=6 E5=7 F5=8（最上線）／ D4=-1 C4=-2（下第1加線）B3=-3 A3=-4（下第2加線）G3=-5
 //   B5=11。臨時記号は「調号がその letter に与える高さ」と実際の midi を比べて決める。
 export function keySignature(key)
-// → [{letter, diatonic, accidental:'sharp'}]。検証済みの値:
+// → [{letter, diatonic, accidental:'sharp'|'flat'}]。検証済みの値:
 //   G: F♯(8) / D: F♯(8) C♯(5) / A: F♯(8) C♯(5) G♯(9) / C: []
 //   （出典照合済み: Texas A&M OER "Steps to Music Theory" 4.7 と VexFlow src/tables.ts）
 ```
@@ -123,3 +123,5 @@ node 22 の標準機能だけ（`node:test` / `node:assert`）。`node tests/run
 - 4音のレベル2以降で隣接弦を複数選んだ場合、毎回2本以上の弦を含める。4弦のときは前回にない弦も含める。
 - 非隣接弦だけを選んだ場合、従来の4度以内の制約を優先する。1本を選んだ場合もその選択を守る。
 - js/companion.js は純粋なSVG文字列生成。DOMの操作はapp.jsに集約する。
+
+2026-09-10: 作者の指示でKEYSにF/Bb/Eb（sharps:0、flats:1/2/3）を追加。既存関数の引数・戻り値構造は維持。♭の調号位置はB4(4)、E5(7)、A4(3)。音名APIの既定は保ち、画面で選択調に合わせて♭表記にする。

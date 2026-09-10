@@ -22,12 +22,17 @@ export const KEYS = {
   A: {jp: 'イ長調', de: 'A-dur', sharps: 3},
   D: {jp: 'ニ長調', de: 'D-dur', sharps: 2},
   G: {jp: 'ト長調', de: 'G-dur', sharps: 1},
-  C: {jp: 'ハ長調', de: 'C-dur', sharps: 0}
+  C: {jp: 'ハ長調', de: 'C-dur', sharps: 0},
+  F: {jp: 'ヘ長調', de: 'F-dur', sharps: 0, flats: 1},
+  Bb: {jp: '変ロ長調', de: 'B-dur', sharps: 0, flats: 2},
+  Eb: {jp: '変ホ長調', de: 'Es-dur', sharps: 0, flats: 3}
 };
 
-const TONIC = {C: 0, G: 7, D: 2, A: 9};
+const TONIC = {C: 0, G: 7, D: 2, A: 9, F: 5, Bb: 10, Eb: 3};
 const MAJOR = [0, 2, 4, 5, 7, 9, 11];
 const SHARP_ORDER = ['F', 'C', 'G', 'D', 'A', 'E', 'B'];
+const FLAT_ORDER = ['B', 'E', 'A'];
+const FLAT_LETTER_BY_PC = ['C','D','D','E','E','F','G','G','A','A','B','B'];
 const NATURAL_PC = {C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11};
 const LETTER_INDEX = {C: 0, D: 1, E: 2, F: 3, G: 4, A: 5, B: 6};
 const LETTER_BY_PC = ['C', 'C', 'D', 'D', 'E', 'F', 'F', 'G', 'G', 'A', 'A', 'B'];
@@ -47,7 +52,7 @@ export function cents(freq, midi, a4 = 442) {
 /*
  * 開放弦は調外でも必ず使い、押さえる指だけを長音階に合わせる。
  * +1〜+7半音の音階音が5つになる場合は低い候補を捨てて上から4つを取る。
- * これにより4の指が常に完全5度上、つまり隣の開放弦と同じ高さになる。
+ * ♭系では低い4の指も使うため、隣の開放弦と同じ高さとは限らない。
  */
 export function fingering(openMidi, key) {
   const scale = scalePcs(key);
@@ -89,28 +94,24 @@ export function noteNameJa(midi) {
   return NOTE_NAME_JA[pitchClass(midi)];
 }
 
-/*
- * このアプリが扱うC/G/D/Aはいずれも♯系なので、黒鍵は♯側のletterで綴る。
- * そのletterの自然音に調号の♯を加えた高さと実音を比較し、調号どおりならnone、
- * 調号の♯を自然音へ戻す場合だけnatural、それ以外の上下半音をsharp/flatとする。
- * 五線位置は半音数ではなくletterの7音階順で数えるため、臨時記号では変化しない。
- */
+// 黒鍵の綴りを調に合わせ、調号と異なる自然音にはナチュラルを付ける。
 export function midiToStaff(midi, key) {
   const pc = pitchClass(midi);
-  const letter = LETTER_BY_PC[pc];
+  const letter = (KEYS[key].flats ? FLAT_LETTER_BY_PC : LETTER_BY_PC)[pc];
   const octave = Math.floor(midi / 12) - 1;
   const naturalMidi = ((octave + 1) * 12) + NATURAL_PC[letter];
   const keyHasSharp = SHARP_ORDER.slice(0, KEYS[key].sharps).includes(letter);
-  const keyMidi = naturalMidi + (keyHasSharp ? 1 : 0);
+  const keyHasFlat = FLAT_ORDER.slice(0, KEYS[key].flats || 0).includes(letter);
+  const keyMidi = naturalMidi + (keyHasSharp ? 1 : keyHasFlat ? -1 : 0);
 
   let accidental;
   if (midi === keyMidi) {
     accidental = 'none';
-  } else if (keyHasSharp && midi === naturalMidi) {
+  } else if ((keyHasSharp || keyHasFlat) && midi === naturalMidi) {
     accidental = 'natural';
-  } else if (midi === keyMidi + 1) {
+  } else if (midi === naturalMidi + 1) {
     accidental = 'sharp';
-  } else if (midi === keyMidi - 1) {
+  } else if (midi === naturalMidi - 1) {
     accidental = 'flat';
   } else {
     throw new RangeError('midi は整数の半音単位で指定する必要があります');
@@ -139,6 +140,11 @@ const TREBLE_SHARP_POSITIONS = [
 ];
 
 export function keySignature(key) {
-  return TREBLE_SHARP_POSITIONS.slice(0, KEYS[key].sharps)
+  const positions = KEYS[key].flats ? [
+    {letter:'B', diatonic:4, accidental:'flat'},
+    {letter:'E', diatonic:7, accidental:'flat'},
+    {letter:'A', diatonic:3, accidental:'flat'}
+  ].slice(0, KEYS[key].flats) : TREBLE_SHARP_POSITIONS.slice(0, KEYS[key].sharps);
+  return positions
     .map(position => ({...position}));
 }

@@ -1,4 +1,4 @@
-import {KEYS, STRINGS, fingering, midiToStaff} from './theory.js';
+import {KEYS, STRINGS, fingering, midiToStaff} from './theory.js?v=20260910-flats1';
 
 // 低い弦から高い弦へ。画面の並びと配列の順序をここで一本化する。
 export const ALL_STRING_IDS = Object.freeze(['G', 'D', 'A', 'E']);
@@ -30,7 +30,7 @@ export function canChooseStrings(level) {
   return Boolean(LEVELS[level] && !LEVELS[level].strings);
 }
 
-const TONIC_PITCH_CLASS = {C: 0, G: 7, D: 2, A: 9};
+const TONIC_PITCH_CLASS = {C: 0, G: 7, D: 2, A: 9, F: 5, Bb: 10, Eb: 3};
 const STABLE_INTERVALS = new Set([0, 4, 7]);
 const RANDOM_ATTEMPTS = 64;
 const STRING_ORDER = new Map(STRINGS.map((string, index) => [string.id, index]));

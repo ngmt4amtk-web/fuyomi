@@ -25,7 +25,10 @@ test('定数は契約どおりの弦と調を持つ', () => {
     A: {jp: 'イ長調', de: 'A-dur', sharps: 3},
     D: {jp: 'ニ長調', de: 'D-dur', sharps: 2},
     G: {jp: 'ト長調', de: 'G-dur', sharps: 1},
-    C: {jp: 'ハ長調', de: 'C-dur', sharps: 0}
+    C: {jp: 'ハ長調', de: 'C-dur', sharps: 0},
+    F: {jp:'ヘ長調',de:'F-dur',sharps:0,flats:1},
+    Bb: {jp:'変ロ長調',de:'B-dur',sharps:0,flats:2},
+    Eb: {jp:'変ホ長調',de:'Es-dur',sharps:0,flats:3}
   });
 });
 
@@ -37,7 +40,7 @@ test('mtofとcentsはA4=442Hzを既定値にする', () => {
   assert.equal(mtof(69, 440), 440);
 });
 
-test('fingeringは4弦×4調で0〜4の5音を昇順にし、4の指を完全5度上に置く', () => {
+test('fingeringは4弦×7調で0〜4の5音を昇順にし、調に応じた4の指を置く', () => {
   for (const string of STRINGS) {
     for (const key of Object.keys(KEYS)) {
       const positions = fingering(string.midi, key);
@@ -53,7 +56,7 @@ test('fingeringは4弦×4調で0〜4の5音を昇順にし、4の指を完全5�
       );
       assert.equal(
         positions[4].midi,
-        string.midi + 7,
+        string.midi + ({F:{E:6},Bb:{A:6,E:6},Eb:{D:6,A:6,E:6}}[key]?.[string.id] ?? 7),
         `${string.id}線・${key}の4の指`
       );
     }
@@ -140,3 +143,7 @@ test('keySignatureはト音記号の慣習位置へF♯、C♯、G♯の順に�
     {letter: 'G', diatonic: 9, accidental: 'sharp'}
   ]);
 });
+ test('フラット3つの低い指を含め正しい第1ポジションになる',()=>{
+  assert.deepEqual(STRINGS.map(s=>fingering(s.midi,'Eb').map(p=>p.midi)),[[55,56,58,60,62],[62,63,65,67,68],[69,70,72,74,75],[76,77,79,80,82]]);
+  assert.deepEqual(positionsForMidi(76,'Eb'),[{stringId:'E',finger:0}]);
+ });

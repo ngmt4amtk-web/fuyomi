@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import {ALL_STRING_IDS, LEVELS, canChooseStrings, levelStrings, makePhrase} from '../js/phrase.js';
 import {KEYS, STRINGS, fingering, midiToStaff} from '../js/theory.js';
 
-const TONIC_PITCH_CLASS = {C: 0, G: 7, D: 2, A: 9};
+const TONIC_PITCH_CLASS = {C: 0, G: 7, D: 2, A: 9, F: 5, Bb: 10, Eb: 3};
 const STABLE_INTERVALS = new Set([0, 4, 7]);
 
 function lcg(seed) {

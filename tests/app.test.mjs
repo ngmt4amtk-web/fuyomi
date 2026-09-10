@@ -338,6 +338,7 @@ async function flushAsync(){
 }
 
 function createHarness({
+  search = '',
   phrases = DEFAULT_PHRASES,
   createMicrophone,
   judgeNote,
@@ -363,7 +364,7 @@ function createHarness({
   };
   const navigator = {mediaDevices:{getUserMedia(){}}};
   const window = {
-    location:{search:''},
+    location:{search},
     localStorage:storage,
     navigator,
     performance:{now:() => clock.now()},
@@ -418,9 +419,9 @@ function pressedStrings(document){
     document.getElementById(`string-chip-${id}`).getAttribute('aria-pressed') === 'true');
 }
 
-function configure(harness, {level = 1, sound = 'off'} = {}){
+function configure(harness, {level = 1, sound = 'off', key = 'A'} = {}){
   harness.document.getElementById('level-select').value = String(level);
-  harness.document.getElementById('key-select').value = 'A';
+  harness.document.getElementById('key-select').value = key;
   harness.document.getElementById('count-select').value = '3';
   harness.document.getElementById('hint-select').value = 'off';
   harness.document.getElementById('sound-select').value = sound;
@@ -770,4 +771,25 @@ test('旧8段階の保存設定は対応する新段階と弦へ一度だけ移�
     assert.deepEqual(pressedStrings(reopened.document),pressedStrings(h.document));
     reopened.app.destroy();h.app.destroy();
   }
+});
+
+test('追加した3調の設定を保存し、不正解をフラット音名で示す',async()=>{
+ for(const key of ['F','Bb','Eb']) {
+  const h=createHarness();await startMicPractice(h,{key});
+  assert.equal(h.document.getElementById('key-select').value,key);
+  assert.equal(JSON.parse(h.storage.getItem('fuyomi')).settings.key,key);
+  assert.match(h.document.getElementById('practice-key').textContent,new RegExp(key));
+  holdMidi(h,70);
+  assert.match(h.document.getElementById('companion-words').textContent,/シ♭の音に聞こえるよ/);
+  assert.doesNotMatch(h.document.getElementById('companion-words').textContent,/ラ♯/);
+  h.app.destroy();
+ }
+});
+
+test('フラットの調を先生のURL指定から読み、選択を固定する',()=>{
+ for(const [value,key] of [['F','F'],['bb','Bb'],['Eb','Eb'],['EB','Eb']]) {
+  const h=createHarness({search:`?key=${value}`});
+  const select=h.document.getElementById('key-select');
+  assert.equal(select.value,key);assert.equal(select.disabled,true);h.app.destroy();
+ }
 });

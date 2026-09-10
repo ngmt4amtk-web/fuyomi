@@ -4,28 +4,35 @@ import {
   canChooseStrings,
   levelStrings,
   makePhrase as defaultMakePhrase,
-} from './phrase.js?v=20260909-8';
+} from './phrase.js?v=20260910-flats1';
 import {
   TOL,
   createHolder as defaultCreateHolder,
   createMic as defaultCreateMic,
   detect as defaultDetect,
   judgeNote as defaultJudgeNote,
-} from './pitch.js?v=20260909-2';
+} from './pitch.js?v=20260910-flats1';
 import {
   KEYS,
   STRINGS,
   fingering,
   midiToStaff,
   mtof,
-  noteNameJa,
+  noteNameJa as defaultNoteNameJa,
   positionsForMidi,
   stringColor,
-} from './theory.js';
-import { renderStaff as defaultRenderStaff } from './staff.js?v=20260909-2';
-import { COMPANIONS, renderCompanion } from './companion.js?v=20260909-8';
+} from './theory.js?v=20260910-flats1';
+import { renderStaff as defaultRenderStaff } from './staff.js?v=20260910-flats1';
+import { COMPANIONS, renderCompanion } from './companion.js?v=20260910-flats1';
 
 export function createFuyomiApp(dependencies = {}) {
+// 既存の音名APIは保ち、画面に出す異名同音を選択中の調に合わせる。
+function noteNameJa(midi) {
+  const label = defaultNoteNameJa(midi);
+  if (!KEYS[elements.keySelect.value]?.flats) return label;
+  return label.replace('ド♯','レ♭').replace('レ♯','ミ♭').replace('ファ♯','ソ♭').replace('ソ♯','ラ♭').replace('ラ♯','シ♭');
+}
+
 const window = dependencies.window ?? globalThis.window;
 const document = dependencies.document ?? globalThis.document;
 if (!window || !document) throw new TypeError('app の起動には window と document が必要です');
@@ -154,7 +161,7 @@ const companionChips = new Map(COMPANIONS.map(id => [id, byId(`companion-chip-${
  * 保存・URL上書き・講師リンクのdisabledは今までどおり select 側の仕組みに乗る。
  */
 const CHIP_GROUPS = [
-  { name: 'key', select: 'keySelect', values: ['C', 'G', 'D', 'A'] },
+  { name: 'key', select: 'keySelect', values: ['C', 'G', 'D', 'A', 'F', 'Bb', 'Eb'] },
   { name: 'marks', select: 'marksSelect', values: ['both', 'color', 'off'] },
   { name: 'hint', select: 'hintSelect', values: ['off', 'on'] },
   { name: 'timer', select: 'timerSelect', values: ['off', 'on'] },
@@ -248,7 +255,8 @@ function queryOverrides() {
     locked.add('level');
   }
 
-  const key = (params.get('key') || '').toUpperCase();
+  const requestedKey = (params.get('key') || '').toUpperCase();
+  const key = Object.keys(KEYS).find(candidate => candidate.toUpperCase() === requestedKey);
   if (params.has('key') && KEYS[key]) {
     overrides.key = key;
     locked.add('key');
@@ -509,7 +517,7 @@ function updateLevelDescription() {
   const stringIds = levelStrings(level, pickedStrings);
   const where = `第1ポジションで、${stringsLabelText(stringIds)}を使います。`;
   elements.levelDescription.textContent = LEVELS[level].maxFinger >= 4
-    ? `${where}4の指は隣の開放弦と同じ高さ。音では区別できないので、弦は自分で見て確かめます。`
+    ? `${where}4の指の高さは調によって変わります。隣の開放弦と同じ高さの音は、弦を自分で見て確かめます。`
     : where;
 }
 

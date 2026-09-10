@@ -1,4 +1,4 @@
-import { keySignature, midiToStaff, stringColor } from './theory.js';
+import { keySignature, midiToStaff, stringColor } from './theory.js?v=20260910-flats1';
 
 // 出典: Bravura 1.204 (Steinberg Media Technologies GmbH), SIL OFL 1.1。UPM 1000 の輪郭を x'=4x/1000, y'=-4y/1000 で五線間隔座標へ変換した。
 export const CLEF_PATH = [
@@ -58,6 +58,8 @@ const SHARP_PATH = [
   'C0.996 0.096 0.984 0.084 0.968 0.084C0.96 0.084 0.956 0.084 0.948 0.088L0.844 0.128',
   'C0.82 0.128 0.792 0.104 0.792 0.056V-0.316C0.792 -0.344 0.812 -0.42 0.844 -0.432Z',
 ].join('');
+
+const FLAT_PATH = 'M0.048 0.68C0.06 0.6960000000000001 0.07200000000000001 0.7000000000000001 0.084 0.7000000000000001C0.096 0.7000000000000001 0.108 0.6920000000000001 0.108 0.6920000000000001C0.228 0.624 0.324 0.516 0.424 0.448C0.78 0.2 0.904 -0.044 0.904 -0.228C0.904 -0.456 0.728 -0.6 0.544 -0.612C0.516 -0.612 0.488 -0.608 0.46 -0.6C0.41600000000000004 -0.588 0.368 -0.5720000000000001 0.324 -0.544C0.3 -0.524 0.256 -0.488 0.23600000000000002 -0.488C0.228 -0.488 0.224 -0.488 0.216 -0.492C0.188 -0.504 0.17200000000000001 -0.532 0.17200000000000001 -0.56C0.176 -0.648 0.2 -1.608 0.2 -1.688C0.2 -1.732 0.164 -1.756 0.124 -1.756C0.068 -1.756 0.004 -1.716 0.0 -1.6440000000000001C0.0 -1.6440000000000001 0.016 0.64 0.048 0.68ZM0.188 0.324C0.188 0.324 0.176 0.084 0.176 -0.076C0.176 -0.14 0.18 -0.188 0.184 -0.20400000000000001C0.2 -0.252 0.304 -0.34 0.36 -0.372C0.396 -0.392 0.432 -0.4 0.464 -0.4C0.504 -0.4 0.54 -0.384 0.5640000000000001 -0.356C0.604 -0.312 0.628 -0.244 0.628 -0.168C0.628 -0.096 0.608 -0.012 0.56 0.07200000000000001C0.508 0.168 0.392 0.296 0.272 0.372C0.256 0.38 0.244 0.384 0.232 0.384C0.196 0.384 0.188 0.34400000000000003 0.188 0.324Z';
 
 const NATURAL_PATH = [
   'M0.148 -0.156C0.148 -0.212 0.392 -0.316 0.488 -0.316C0.512 -0.316 0.524 -0.312 0.524 -0.296',
@@ -119,6 +121,7 @@ const LEDGER_HALF_WIDTH = 0.96;
 const LINE_STROKE_WIDTH = 1 / 8;
 const ACCIDENTAL_METRICS = {
   sharp: { pathWidth: 0.996, top: -1.4, bottom: 1.392 },
+  flat: { pathWidth: 0.904, top: -1.756, bottom: 0.7 },
   natural: { pathWidth: 0.672, top: -1.364, bottom: 1.34 },
 };
 const NOTE_ACCIDENTAL_OFFSET = 1.72;
@@ -176,6 +179,7 @@ function noteAppearance(state, palette, stringInk) {
 
 function accidentalPath(accidental) {
   if (accidental === 'sharp') return SHARP_PATH;
+  if (accidental === 'flat') return FLAT_PATH;
   if (accidental === 'natural') return NATURAL_PATH;
   return null;
 }
@@ -317,8 +321,15 @@ export function renderStaff({ key, notes, width, theme, marks } = {}) {
   const signature = keySignature(key);
   const signatureItems = Array.isArray(signature) ? signature : [];
 
+  const previousPitches = new Map();
   const plottedNotes = sourceNotes.map((note, index) => {
     const staffNote = midiToStaff(note.midi, key);
+    // 同じ小節で解除された調号は、同じ高さの音が戻る時に書き直す。
+    const pitchKey = `${staffNote.letter}${staffNote.octave}`;
+    if (previousPitches.has(pitchKey) && previousPitches.get(pitchKey) !== note.midi && staffNote.accidental === 'none') {
+      staffNote.accidental = signatureItems.find(item => item.letter === staffNote.letter)?.accidental || 'natural';
+    }
+    previousPitches.set(pitchKey, note.midi);
     const state = VALID_STATES.has(note.state) ? note.state : 'todo';
     const stringInk = colorByString ? stringColor(note.stringId, selectedTheme) : null;
     return { note, index, staffNote, state, stringInk };
