@@ -44,7 +44,7 @@ export function makePhrase({level, key, length=4, prev=null, rng=Math.random, st
 // ルール（テストで機械検証する）:
 //  - 隣り合う音は原則2度（順次進行）。跳躍（3度以上）は1フレーズに最大1回、最大4度まで。
 //  - 最後の音は安定音（その調の主音・第3音・第5音のいずれかの音名）。
-//  - 同じ音の連続は2回まで。最低2種類の音高を含む。
+//  - 同じ音を連続させない。prevの最後と今回の最初も違う音高にする。
 //  - level.strings と maxFinger から作る運指の範囲内。
 //  - prev と midi 列が完全一致しない。
 //  - 同じ高さが2通りで取れるときは、直前の音と同じ弦になる取り方を優先（弦を無駄に跨がせない）。
@@ -84,7 +84,7 @@ export function judgeNote({freq, targetMidi, candidates, cfg, a4})
 ```js
 export function renderStaff({key, notes, width, theme, marks})
 // notes = [{midi, stringId, finger, state:'done'|'current'|'todo'|'miss', hint:{stringId,finger,nameJa}|null}]
-// note.forceFinger = true // その音だけ番号を残す。レベル3・5の同音異弦の0/4にappが指定。
+// note.forceFinger = true // その音だけ番号を残す。appはヒント「指だけ」の現在音に指定。
 // marks = 'both'（弦の色＋指番号）| 'color'（弦の色だけ）| 'off'（既定。五線だけ）
 // → SVG文字列。五線・ト音記号（自前パス）・調号・音符・符幹・加線・臨時記号・状態の描き分け。
 // 指番号は data-role="finger"。五線の上端より上に置き、上加線へ出た音だけ自分の加線ぶん持ち上げる。

@@ -9,6 +9,7 @@ const ELEMENT_IDS = [
   'timer-select', 'timer-chip-off', 'timer-chip-on', 'practice-timer', 'result-time',
   'setup-screen', 'check-screen', 'practice-screen', 'result-screen', 'settings-form',
   'level-select', 'key-select', 'count-select', 'hint-select', 'sound-select',
+  'hint-chip-name', 'hint-chip-finger', 'hint-chip-off', 'marks-chip-color', 'marks-chip-off',
   'marks-select', 'strings-field', 'strings-note', 'string-legend', 'string-chip-G',
   'string-chip-D', 'string-chip-A', 'string-chip-E',
   'tolerance-select', 'a4-select', 'level-description', 'teacher-notice', 'check-status',
@@ -72,16 +73,27 @@ test('恐竜と犬も正解・不正解・弾き直しに反応する', async ()
   }
 });
 
-test('レベル3・5は番号なしでも同音異弦の0と4だけを残す', async () => {
-  const phrases = [[note(76,'A',4),note(76,'E',0),note(71,'A',1),note(83,'E',4)]];
-  for (const level of [2,3,5]) {
-    for (const marks of ['off','color']) {
+test('音名・指・なしを排他的に表示し、同音異弦の0と4にも適用する', async () => {
+  const phrases = [[note(76,'A',4),note(71,'A',1),note(76,'E',0),note(83,'E',4)]];
+  for (const level of [1,2,3,4,5]) for (const marks of ['off','color','both']) {
+    for (const hint of ['name','finger','off']) {
       const h = createHarness({phrases});
       h.document.getElementById('marks-select').value = marks;
-      await startMicPractice(h,{level});
-      const svg = h.document.getElementById('staff-wrap').innerHTML;
-      const labels = [...svg.matchAll(/data-role="finger"[^>]*data-finger="(\d)"/g)].map(m=>m[1]);
-      assert.deepEqual(labels, level===2 ? [] : ['4','0']);
+      await startManualPractice(h,{level, hint});
+      for (const [index, target] of phrases[0].entries()) {
+        const svg = h.document.getElementById('staff-wrap').innerHTML;
+        const labels = [...svg.matchAll(/data-role="finger"[^>]*data-finger="(\d)"/g)].map(m=>m[1]);
+        assert.deepEqual(labels, hint === 'finger' ? [String(target.finger)] : []);
+        assert.equal((svg.match(/data-role="hint"/g) || []).length, hint === 'name' ? 1 : 0);
+        assert.equal(h.document.getElementById('hint-name').hidden, hint !== 'name');
+        assert.equal(h.document.getElementById('hint-fingering').hidden, hint !== 'finger');
+        assert.equal(h.document.getElementById('hint-panel').hidden, hint === 'off');
+        if (hint === 'finger') assert.equal(h.document.getElementById('hint-fingering').textContent, `${target.finger}の指`);
+        if (index < 3) {
+          h.document.getElementById('manual-next-button').click();
+          h.clock.advance(300);
+        }
+      }
       h.app.destroy();
     }
   }
@@ -93,6 +105,56 @@ test('調にないナチュラルも吹き出しが正しく言い当てる', as
   holdMidi(h,72);
   assert.equal(h.document.getElementById('companion-words').textContent,'ドの音に聞こえるよ');
   assert.equal(h.document.getElementById('note-count').textContent,'1 / 4音');
+  h.app.destroy();
+});
+
+test('3種類のヒントを保存・復元し、URL指定と旧on設定も扱う', () => {
+  for (const hint of ['name','finger','off']) {
+    const h = createHarness();
+    h.document.getElementById(`hint-chip-${hint}`).click();
+    const settings = JSON.parse(h.storage.getItem('fuyomi')).settings;
+    assert.equal(settings.hint, hint);
+    h.app.destroy();
+    const restored = createHarness({storedSettings:settings});
+    assert.equal(restored.document.getElementById(`hint-chip-${hint}`).getAttribute('aria-pressed'), 'true');
+    restored.app.destroy();
+    const locked = createHarness({search:`?hint=${hint}`});
+    assert.equal(locked.document.getElementById('hint-select').value, hint);
+    for (const value of ['name','finger','off']) assert.equal(locked.document.getElementById(`hint-chip-${value}`).disabled, true);
+    locked.app.destroy();
+  }
+  for (const options of [{storedSettings:{hint:'on',marks:'both'}}, {search:'?hint=on&marks=both'}]) {
+    const h = createHarness(options);
+    assert.equal(h.document.getElementById('hint-select').value, 'name');
+    assert.equal(h.document.getElementById('marks-select').value, 'color');
+    h.app.destroy();
+  }
+});
+
+test('不正解後も選んだヒントだけを保ち、次の音でも混在しない', async () => {
+  for (const hint of ['name','finger','off']) {
+    const h = createHarness();
+    await startMicPractice(h,{hint});
+    holdMidi(h,71);
+    assert.equal(h.document.getElementById('hint-name').hidden, hint !== 'name');
+    assert.equal(h.document.getElementById('hint-fingering').hidden, hint !== 'finger');
+    assert.equal(h.document.getElementById('hint-panel').hidden, hint === 'off');
+    h.clock.advance(900);
+    armWithSilence(h);
+    holdMidi(h,69);
+    h.clock.advance(300);
+    assert.equal(h.document.getElementById('note-count').textContent, '2 / 4音');
+    assert.equal(h.document.getElementById('hint-name').textContent, hint === 'name' ? 'シ' : '');
+    assert.equal(h.document.getElementById('hint-fingering').textContent, hint === 'finger' ? '1の指' : '');
+    h.app.destroy();
+  }
+});
+
+test('音名だけのヒントはフラットの表記も保つ', async () => {
+  const h = createHarness({phrases:[[note(70,'A',1),note(72,'A',2),note(74,'A',3),note(70,'A',1)]]});
+  await startManualPractice(h,{key:'Bb',hint:'name'});
+  assert.equal(h.document.getElementById('hint-name').textContent, 'シ♭');
+  assert.equal(h.document.getElementById('hint-fingering').textContent, '');
   h.app.destroy();
 });
 
@@ -419,11 +481,11 @@ function pressedStrings(document){
     document.getElementById(`string-chip-${id}`).getAttribute('aria-pressed') === 'true');
 }
 
-function configure(harness, {level = 1, sound = 'off', key = 'A'} = {}){
+function configure(harness, {level = 1, sound = 'off', key = 'A', hint = 'off'} = {}){
   harness.document.getElementById('level-select').value = String(level);
   harness.document.getElementById('key-select').value = key;
   harness.document.getElementById('count-select').value = '3';
-  harness.document.getElementById('hint-select').value = 'off';
+  harness.document.getElementById('hint-select').value = hint;
   harness.document.getElementById('sound-select').value = sound;
   harness.document.getElementById('tolerance-select').value = 'loose';
   harness.document.getElementById('a4-select').value = '442';

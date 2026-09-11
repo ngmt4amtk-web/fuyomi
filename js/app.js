@@ -4,7 +4,7 @@ import {
   canChooseStrings,
   levelStrings,
   makePhrase as defaultMakePhrase,
-} from './phrase.js?v=20260910-flats1';
+} from './phrase.js?v=20260911-hints1';
 import {
   TOL,
   createHolder as defaultCreateHolder,
@@ -19,7 +19,6 @@ import {
   midiToStaff,
   mtof,
   noteNameJa as defaultNoteNameJa,
-  positionsForMidi,
   stringColor,
 } from './theory.js?v=20260910-flats1';
 import { renderStaff as defaultRenderStaff } from './staff.js?v=20260910-flats1';
@@ -71,7 +70,7 @@ const DEFAULTS = Object.freeze({
   key: 'A',
   count: 3,
   hint: 'off',
-  marks: 'both',
+  marks: 'color',
   companion: 'fluffy',
   timer: 'off',
   // 弦を選べるレベルで未選択のときは、レベルごとの既定（LEVELS.preset）へ落とす。
@@ -81,6 +80,7 @@ const DEFAULTS = Object.freeze({
 });
 const VALID_COUNTS = new Set([3, 5, 10]);
 const VALID_MARKS = new Set(['both', 'color', 'off']);
+const VALID_HINTS = new Set(['name', 'finger', 'off']);
 /*
  * 合格したときの言葉。同じ文が続くと飽きるので順に回す。
  * 音程の良し悪しは言わない（採用8）。言っているのは「読めていた」ことだけ。
@@ -133,9 +133,6 @@ const elements = {
   hintPanel: byId('hint-panel'),
   hintName: byId('hint-name'),
   hintFingering: byId('hint-fingering'),
-  samePitchNote: byId('same-pitch-note'),
-  fourthFingerNote: byId('fourth-finger-note'),
-  hintButton: byId('hint-button'),
   exampleButton: byId('example-button'),
   manualNextButton: byId('manual-next-button'),
   skipButton: byId('skip-button'),
@@ -162,8 +159,8 @@ const companionChips = new Map(COMPANIONS.map(id => [id, byId(`companion-chip-${
  */
 const CHIP_GROUPS = [
   { name: 'key', select: 'keySelect', values: ['C', 'G', 'D', 'A', 'F', 'Bb', 'Eb'] },
-  { name: 'marks', select: 'marksSelect', values: ['both', 'color', 'off'] },
-  { name: 'hint', select: 'hintSelect', values: ['off', 'on'] },
+  { name: 'marks', select: 'marksSelect', values: ['color', 'off'] },
+  { name: 'hint', select: 'hintSelect', values: ['name', 'finger', 'off'] },
   { name: 'timer', select: 'timerSelect', values: ['off', 'on'] },
 ];
 const optionChips = new Map(CHIP_GROUPS.flatMap((group) => group.values
@@ -197,7 +194,6 @@ const state = {
   previousPhrase: null,
   noteIndex: 0,
   outcomes: [],
-  hintStage: 0,
   missFlash: false,
   processing: false,
   voiceMuteUntil: 0,
@@ -234,8 +230,9 @@ function normalizedSettings(raw = {}) {
     levelScheme: 2,
     key: KEYS[raw.key] ? raw.key : DEFAULTS.key,
     count: VALID_COUNTS.has(count) ? count : DEFAULTS.count,
-    hint: raw.hint === 'on' ? 'on' : DEFAULTS.hint,
-    marks: VALID_MARKS.has(raw.marks) ? raw.marks : DEFAULTS.marks,
+    // 旧「最初から出す」は音名へ移行。指番号は新しいヒント選択だけで決める。
+    hint: raw.hint === 'on' ? 'name' : VALID_HINTS.has(raw.hint) ? raw.hint : DEFAULTS.hint,
+    marks: raw.marks === 'off' ? 'off' : DEFAULTS.marks,
     timer: raw.timer === 'on' ? 'on' : 'off',
     companion: COMPANIONS.includes(raw.companion) ? raw.companion : DEFAULTS.companion,
     strings: normalizedStrings(raw.strings),
@@ -269,14 +266,14 @@ function queryOverrides() {
   }
 
   const hint = params.get('hint');
-  if (params.has('hint') && (hint === 'on' || hint === 'off')) {
-    overrides.hint = hint;
+  if (params.has('hint') && (hint === 'on' || VALID_HINTS.has(hint))) {
+    overrides.hint = hint === 'on' ? 'name' : hint;
     locked.add('hint');
   }
 
   const marks = params.get('marks');
   if (params.has('marks') && VALID_MARKS.has(marks)) {
-    overrides.marks = marks;
+    overrides.marks = marks === 'both' ? 'color' : marks;
     locked.add('marks');
   }
 
@@ -653,7 +650,6 @@ function startSession(config) {
   state.previousPhrase = null;
   state.noteIndex = 0;
   state.outcomes = [];
-  state.hintStage = 0;
   state.missFlash = false;
   state.voiceMuteUntil = 0;
   state.records = [];
@@ -780,11 +776,8 @@ function startCurrentRecord() {
     outcome: null,
   };
   state.records.push(record);
-  state.hintStage = state.config.hint === 'on' ? 2 : 0;
-  if (state.hintStage === 2) {
-    record.hints.add('音名（最初から）');
-    record.hints.add('推奨運指（最初から）');
-  }
+  if (state.config.hint === 'name') record.hints.add('音名');
+  if (state.config.hint === 'finger') record.hints.add('指番号');
   updateHoldProgress(0);
 }
 
@@ -948,8 +941,6 @@ function missCurrentNote(result, token) {
   const record = currentRecord();
   if (!record || token !== state.sessionId) return;
   record.retries += 1;
-  record.hints.add('音名（外した後）');
-  state.hintStage = Math.max(state.hintStage, 1);
   state.processing = true;
   state.missFlash = true;
   state.holder.reset();
@@ -1035,25 +1026,6 @@ async function completePhrase(token) {
   }, Math.max(520, soundDuration + 260), token);
 }
 
-function revealHint() {
-  if (state.processing || state.screen !== 'practice') return;
-  const record = currentRecord();
-  if (!record) return;
-
-  if (state.hintStage === 0) {
-    state.hintStage = 1;
-    record.hints.add('音名');
-    elements.practiceStatus.textContent = 'まず音名を見て、もう一度譜面に戻ります。';
-  } else if (state.hintStage === 1) {
-    state.hintStage = 2;
-    record.hints.add('推奨運指');
-    elements.practiceStatus.textContent = 'このアプリが勧める運指も出しました。';
-  } else {
-    elements.practiceStatus.textContent = '音名と、このアプリが勧める運指を表示しています。';
-  }
-  renderPractice();
-}
-
 function buildStaffNotes() {
   return state.phrase.notes.map((note, index) => {
     let noteState = 'todo';
@@ -1065,14 +1037,9 @@ function buildStaffNotes() {
       else noteState = state.missFlash ? 'miss' : 'current';
     }
 
-    let hint = null;
-    if (index === state.noteIndex && state.hintStage >= 1) {
-      hint = { nameJa: noteNameJa(note.midi) };
-      if (state.hintStage >= 2) {
-        hint.stringId = note.stringId;
-        hint.finger = note.finger;
-      }
-    }
+    const isCurrent = index === state.noteIndex;
+    const hint = isCurrent && state.config.hint === 'name'
+      ? { nameJa: noteNameJa(note.midi) } : null;
     // 弦と指は staff.js が色と指番号に使う。判定には一切関わらない、勧める運指の表示。
     return {
       midi: note.midi,
@@ -1080,10 +1047,8 @@ function buildStaffNotes() {
       finger: note.finger,
       state: noteState,
       hint,
-      // 0と4の選択は音高では区別できないため、番号非表示でも勧める運指を残す。
-      forceFinger: [3, 5].includes(state.config.level) && [0, 4].includes(note.finger)
-        && positionsForMidi(note.midi, state.config.key).some(position => position.finger !== note.finger
-          && [0, 4].includes(position.finger)),
+      // 色の設定や同音異弦の0/4から、選んでいない種類のヒントが漏れないようにする。
+      forceFinger: isCurrent && state.config.hint === 'finger',
     };
   });
 }
@@ -1101,14 +1066,6 @@ function renderStringLegend() {
     return item;
   });
   elements.stringLegend.replaceChildren(...items);
-}
-
-function alternatePositionText(note) {
-  const alternate = positionsForMidi(note.midi, state.config.key)
-    .find((position) => position.stringId !== note.stringId || position.finger !== note.finger);
-  if (!alternate) return '';
-  const label = STRING_BY_ID.get(alternate.stringId)?.label || `${alternate.stringId}線`;
-  return `※ ${label}の${alternate.finger}と同じ高さ`;
 }
 
 function renderPractice() {
@@ -1134,20 +1091,13 @@ function renderPractice() {
   elements.exampleButton.hidden = false;
 
   const note = currentNote();
-  const showHint = Boolean(note) && state.hintStage >= 1;
-  elements.hintPanel.hidden = !showHint;
-  if (showHint) {
-    elements.hintName.textContent = `音名　${noteNameJa(note.midi)}`;
-    elements.hintFingering.hidden = state.hintStage < 2;
-    elements.hintFingering.textContent = state.hintStage >= 2
-      ? `このアプリが勧める運指　${STRING_BY_ID.get(note.stringId).label}の${note.finger}`
-      : '';
-
-    const alternate = state.hintStage >= 2 ? alternatePositionText(note) : '';
-    elements.samePitchNote.hidden = !alternate;
-    elements.samePitchNote.textContent = alternate;
-    elements.fourthFingerNote.hidden = !(state.hintStage >= 2 && note.finger === 4);
-  }
+  const showName = Boolean(note) && state.config.hint === 'name';
+  const showFinger = Boolean(note) && state.config.hint === 'finger';
+  elements.hintPanel.hidden = !(showName || showFinger);
+  elements.hintName.hidden = !showName;
+  elements.hintName.textContent = showName ? noteNameJa(note.midi) : '';
+  elements.hintFingering.hidden = !showFinger;
+  elements.hintFingering.textContent = showFinger ? `${note.finger}の指` : '';
 }
 
 function updateHoldProgress(progress) {
@@ -1601,7 +1551,6 @@ elements.withoutMicButton.addEventListener('click', () => {
 });
 
 elements.checkCancelButton.addEventListener('click', returnToSettings);
-elements.hintButton.addEventListener('click', revealHint);
 elements.skipButton.addEventListener('click', skipCurrentNote);
 elements.manualNextButton.addEventListener('click', () => passCurrentNote('manual'));
 elements.quitButton.addEventListener('click', returnToSettings);

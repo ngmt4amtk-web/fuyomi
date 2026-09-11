@@ -34,7 +34,7 @@ const TONIC_PITCH_CLASS = {C: 0, G: 7, D: 2, A: 9, F: 5, Bb: 10, Eb: 3};
 const STABLE_INTERVALS = new Set([0, 4, 7]);
 const RANDOM_ATTEMPTS = 64;
 const STRING_ORDER = new Map(STRINGS.map((string, index) => [string.id, index]));
-const crossingPools = new Map();
+const phrasePools = new Map();
 
 const pitchClass = midi => ((midi % 12) + 12) % 12;
 
@@ -138,7 +138,7 @@ function randomToneSequence(tones, cadences, length, rng) {
       const interval = Math.abs(candidate.diatonic - next.diatonic);
       if (interval > 3) return false;
       if (interval >= 2 && leaps >= 1) return false;
-      return !(candidate.midi === next.midi && next.midi === following?.midi);
+      return candidate.midi !== next.midi;
     });
 
     const chosen = weightedPick(
@@ -166,6 +166,11 @@ function sameMidis(tones, midis) {
     && tones.every((tone, index) => tone.midi === midis[index]);
 }
 
+function followsPrevious(tones, midis) {
+  // フレーズが切り替わっても、直前に弾いた音をもう一度出題しない。
+  return tones[0].midi !== midis?.at(-1) && !sameMidis(tones, midis);
+}
+
 function alternatingCadence({approach, end}, length) {
   return Array.from({length}, (_, index) =>
     (length - 1 - index) % 2 === 0 ? end : approach);
@@ -174,15 +179,15 @@ function alternatingCadence({approach, end}, length) {
 function deterministicFallback(cadences, length, prevMidis) {
   /*
    * 各対象音域には、安定音へ2度で入る終止形が複数ある。交互に並べれば、任意の長さで
-   * 3連続同音・跳躍・全音同一を起こさない。prev と同じ形だけを飛ばすので乱数にも依存しない。
+   * 連続同音・跳躍を起こさない。前回末尾と先頭が重なる形も飛ばし、固定乱数でも守る。
    */
   for (const cadence of cadences) {
     const sequence = alternatingCadence(cadence, length);
-    if (!sameMidis(sequence, prevMidis)) return sequence;
+    if (followsPrevious(sequence, prevMidis)) return sequence;
   }
 
   // 有効なLEVELS・調・length>=2では複数の終止形があるため、ここへは到達しない。
-  return alternatingCadence(cadences[0], length);
+  throw new RangeError('同音を連続させない終止形がありません');
 }
 
 function choosePosition(tone, previousStringId) {
@@ -226,28 +231,28 @@ export function makePhrase({level, key, length = 4, prev = null, rng = Math.rand
     i > 0 && STRING_ORDER.get(id) - STRING_ORDER.get(stringIds[i - 1]) === 1);
   const hasCrossing = sequence => new Set(addFingerings(sequence).map(note => note.stringId)).size >= 2;
 
-  // 4音の移弦は候補を列挙して均等に選ぶ。単弦フレーズの棄却だけでは一部の形へ偏る。
-  if (crossing && length === 4) {
+  // 4音は単弦も候補を列挙して選ぶ。同音を除いた狭い音域でも一部の形へ偏らせない。
+  if (length === 4) {
     const poolKey = `${level}:${key}:${stringIds.join('')}`;
-    if (!crossingPools.has(poolKey)) {
+    if (!phrasePools.has(poolKey)) {
       const pool = [];
       const collect = (sequence, leaps) => {
         if (sequence.length === length) {
-          if (isStable(sequence.at(-1), key) && hasCrossing(sequence)) pool.push(addFingerings(sequence));
+          if (isStable(sequence.at(-1), key) && (!crossing || hasCrossing(sequence))) pool.push(addFingerings(sequence));
           return;
         }
         for (const tone of tones) {
           const last = sequence.at(-1);
           const interval = last ? Math.abs(last.diatonic - tone.diatonic) : 0;
           if (interval > 3 || (interval >= 2 && leaps >= 1)) continue;
-          if (tone.midi === last?.midi && tone.midi === sequence.at(-2)?.midi) continue;
+          if (tone.midi === last?.midi) continue;
           collect([...sequence, tone], leaps + Number(interval >= 2));
         }
       };
       collect([], 0);
-      crossingPools.set(poolKey, pool);
+      phrasePools.set(poolKey, pool);
     }
-    const pool = crossingPools.get(poolKey).filter(notes => !sameMidis(notes, prevMidis));
+    const pool = phrasePools.get(poolKey).filter(notes => followsPrevious(notes, prevMidis));
     const varied = pool.filter(notes => notes.some(note => !previousStrings.has(note.stringId)));
     const choices = varied.length ? varied : pool;
     if (choices.length) {
@@ -264,7 +269,7 @@ export function makePhrase({level, key, length = 4, prev = null, rng = Math.rand
     const sequence = randomToneSequence(tones, cadences, length, rng);
     const positions = addFingerings(sequence);
     const variesStrings = positions.some(note => !previousStrings.has(note.stringId));
-    if (!sameMidis(sequence, prevMidis) && (!crossing || hasCrossing(sequence))
+    if (followsPrevious(sequence, prevMidis) && (!crossing || hasCrossing(sequence))
       && (attempt >= 32 || previousStrings.size === 0 || variesStrings || stringIds.every(id => previousStrings.has(id)))) {
       return {notes: addFingerings(sequence), key, level, strings: stringIds};
     }
@@ -276,14 +281,14 @@ export function makePhrase({level, key, length = 4, prev = null, rng = Math.rand
     const search = (sequence, leaps) => {
       if (++visits > 20000) return null;
       if (sequence.length === length) {
-        return isStable(sequence.at(-1), key) && !sameMidis(sequence, prevMidis) && hasCrossing(sequence)
+        return isStable(sequence.at(-1), key) && followsPrevious(sequence, prevMidis) && hasCrossing(sequence)
           ? sequence : null;
       }
       for (const tone of tones) {
         const last = sequence.at(-1);
         const interval = last ? Math.abs(last.diatonic - tone.diatonic) : 0;
         if (interval > 3 || (interval >= 2 && leaps >= 1)) continue;
-        if (tone.midi === last?.midi && tone.midi === sequence.at(-2)?.midi) continue;
+        if (tone.midi === (last?.midi ?? prevMidis?.at(-1))) continue;
         const found = search([...sequence, tone], leaps + Number(interval >= 2));
         if (found) return found;
       }

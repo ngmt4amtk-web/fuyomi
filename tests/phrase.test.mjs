@@ -56,7 +56,6 @@ function assertValidPhrase(phrase, {level, key, length, picked = null}) {
 
   const allowed = allowedPositions(level, key, picked);
   let leapCount = 0;
-  let sameRun = 0;
   let lastMidi = null;
 
   phrase.notes.forEach((note, index) => {
@@ -81,8 +80,7 @@ function assertValidPhrase(phrase, {level, key, length, picked = null}) {
       );
     }
 
-    sameRun = note.midi === lastMidi ? sameRun + 1 : 1;
-    assert.ok(sameRun <= 2, '同じ音を3回以上連続させない');
+    assert.notEqual(note.midi, lastMidi, '同じ音を連続させない');
     lastMidi = note.midi;
 
     if (index > 0) {
@@ -183,7 +181,10 @@ test('全レベル・全調で200フレーズずつ音楽的ルールを守る',
       for (let index = 0; index < 200; index++) {
         const phrase = makePhrase({level, key, prev, rng});
         assertValidPhrase(phrase, {level, key, length: 4});
-        if (prev) assert.notEqual(midiSequence(phrase), midiSequence(prev));
+        if (prev) {
+          assert.notEqual(midiSequence(phrase), midiSequence(prev));
+          assert.notEqual(phrase.notes[0].midi, prev.notes.at(-1).midi, 'フレーズの境目も同音を連続させない');
+        }
         prev = phrase;
       }
     }
@@ -200,10 +201,40 @@ test('length=3と6でも全レベル・全調で同じルールが成立する',
         for (let index = 0; index < 40; index++) {
           const phrase = makePhrase({level, key, length, prev, rng});
           assertValidPhrase(phrase, {level, key, length});
-          if (prev) assert.notEqual(midiSequence(phrase), midiSequence(prev));
+          if (prev) {
+            assert.notEqual(midiSequence(phrase), midiSequence(prev));
+            assert.notEqual(phrase.notes[0].midi, prev.notes.at(-1).midi);
+          }
           prev = phrase;
         }
       }
+    }
+  }
+});
+
+test('全調・全弦選択で固定乱数でもフレーズ内と境目の同音を避ける', () => {
+  for (const level of Object.keys(LEVELS).map(Number)) for (const key of Object.keys(KEYS)) {
+    for (let mask = 1; mask < 16; mask++) {
+      const picked = ALL_STRING_IDS.filter((_, index) => mask & (1 << index));
+      for (const value of [0, 0.5, 1, NaN]) {
+        let prev = null;
+        for (let index = 0; index < 6; index++) {
+          const phrase = makePhrase({level, key, strings:picked, prev, rng:() => value});
+          assertValidPhrase(phrase, {level,key,length:4,picked});
+          if (prev) assert.notEqual(phrase.notes[0].midi, prev.notes.at(-1).midi);
+          prev = phrase;
+        }
+      }
+    }
+  }
+});
+
+test('prevがMIDI配列でも音符配列でも末尾との同音を避ける', () => {
+  for (const prev of [[69], [{midi:69}], {notes:[{midi:69}]}]) {
+    for (const length of [2,3,4,6]) {
+      const phrase = makePhrase({level:1,key:'A',strings:['A'],length,prev,rng:() => 0});
+      assert.notEqual(phrase.notes[0].midi,69);
+      assertValidPhrase(phrase,{level:1,key:'A',length,picked:['A']});
     }
   }
 });

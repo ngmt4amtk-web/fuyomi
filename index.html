@@ -64,15 +64,13 @@
           </div>
 
           <div class="field">
-            <span id="marks-label">弦の色と指番号</span>
+            <span id="marks-label">弦の色</span>
             <select id="marks-select" name="marks" class="visually-hidden" tabindex="-1" aria-hidden="true">
-              <option value="both">色と指番号を出す</option>
-              <option value="color">色だけ出す</option>
+              <option value="color">色を出す</option>
               <option value="off">出さない</option>
             </select>
             <div class="chip-row" role="group" aria-labelledby="marks-label">
-              <button id="marks-chip-both" class="option-chip" type="button" aria-pressed="false">色と指番号</button>
-              <button id="marks-chip-color" class="option-chip" type="button" aria-pressed="false">色だけ</button>
+              <button id="marks-chip-color" class="option-chip" type="button" aria-pressed="false">色を出す</button>
               <button id="marks-chip-off" class="option-chip" type="button" aria-pressed="false">なし</button>
             </div>
           </div>
@@ -80,12 +78,14 @@
           <div class="field">
             <span id="hint-label">ヒント</span>
             <select id="hint-select" name="hint" class="visually-hidden" tabindex="-1" aria-hidden="true">
-              <option value="off">なし</option>
-              <option value="on">最初から出す</option>
+              <option value="name">音名だけ</option>
+              <option value="finger">指だけ</option>
+              <option value="off">ヒントなし</option>
             </select>
             <div class="chip-row" role="group" aria-labelledby="hint-label">
-              <button id="hint-chip-off" class="option-chip" type="button" aria-pressed="false">なし</button>
-              <button id="hint-chip-on" class="option-chip" type="button" aria-pressed="false">最初から出す</button>
+              <button id="hint-chip-name" class="option-chip" type="button" aria-pressed="false">音名だけ</button>
+              <button id="hint-chip-finger" class="option-chip" type="button" aria-pressed="false">指だけ</button>
+              <button id="hint-chip-off" class="option-chip" type="button" aria-pressed="false">ヒントなし</button>
             </div>
           </div>
         </div>
@@ -209,12 +209,9 @@
         <div id="hint-panel" class="hint-panel" hidden>
           <p id="hint-name" class="hint-name"></p>
           <p id="hint-fingering" class="hint-fingering" hidden></p>
-          <p id="same-pitch-note" class="same-pitch-note" hidden></p>
-          <p id="fourth-finger-note" class="same-pitch-note" hidden>4の指は隣の開放弦と同じ高さ。音では区別できないので弦は自分で確かめて。</p>
         </div>
 
         <div class="practice-actions">
-          <button id="hint-button" class="secondary-button" type="button">わからない</button>
           <button id="example-button" class="secondary-button" type="button">
             おてほん
             <small>長押しで4音</small>
@@ -265,6 +262,6 @@
   </div>
 
   <noscript>このアプリを使うにはJavaScriptを有効にしてください。</noscript>
-  <script type="module" src="js/app.js?v=20260910-flats1"></script>
+  <script type="module" src="js/app.js?v=20260911-hints1"></script>
 </body>
 </html>
