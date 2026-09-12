@@ -79,14 +79,15 @@
             <span id="hint-label">ヒント</span>
             <select id="hint-select" name="hint" class="visually-hidden" tabindex="-1" aria-hidden="true">
               <option value="name">音名だけ</option>
-              <option value="finger">指だけ</option>
+              <option value="finger">音名と指</option>
               <option value="off">ヒントなし</option>
             </select>
             <div class="chip-row" role="group" aria-labelledby="hint-label">
               <button id="hint-chip-name" class="option-chip" type="button" aria-pressed="false">音名だけ</button>
-              <button id="hint-chip-finger" class="option-chip" type="button" aria-pressed="false">指だけ</button>
+              <button id="hint-chip-finger" class="option-chip" type="button" aria-pressed="false">音名と指</button>
               <button id="hint-chip-off" class="option-chip" type="button" aria-pressed="false">ヒントなし</button>
             </div>
+            <p class="chip-note">ヒントなしでは色も隠します。同じ音で2回間違えると音名、5回で指番号も、6回で弦の色も出ます。</p>
           </div>
         </div>
 
@@ -262,6 +263,6 @@
   </div>
 
   <noscript>このアプリを使うにはJavaScriptを有効にしてください。</noscript>
-  <script type="module" src="js/app.js?v=20260911-hints1"></script>
+  <script type="module" src="js/app.js?v=20260912-feedback1"></script>
 </body>
 </html>

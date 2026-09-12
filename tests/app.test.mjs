@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {createFuyomiApp} from '../js/app.js';
-import {mtof} from '../js/theory.js';
+import {mtof, stringColor} from '../js/theory.js';
 import {companionStage, renderCompanion} from '../js/companion.js';
 
 const ELEMENT_IDS = [
@@ -64,6 +64,7 @@ test('恐竜と犬も正解・不正解・弾き直しに反応する', async ()
     holdMidi(h,71);
     assert.equal(h.document.getElementById('companion').getAttribute('data-reaction'),'miss');
     assert.match(art.innerHTML,/gloomy/);
+    await flushAsync();
     h.clock.advance(5000);
     assert.match(art.innerHTML,/gloomy/);
     armWithSilence(h);
@@ -73,7 +74,7 @@ test('恐竜と犬も正解・不正解・弾き直しに反応する', async ()
   }
 });
 
-test('音名・指・なしを排他的に表示し、同音異弦の0と4にも適用する', async () => {
+test('音名だけ・音名と指・なしを表示し、同音異弦の0と4にも適用する', async () => {
   const phrases = [[note(76,'A',4),note(71,'A',1),note(76,'E',0),note(83,'E',4)]];
   for (const level of [1,2,3,4,5]) for (const marks of ['off','color','both']) {
     for (const hint of ['name','finger','off']) {
@@ -84,8 +85,8 @@ test('音名・指・なしを排他的に表示し、同音異弦の0と4にも
         const svg = h.document.getElementById('staff-wrap').innerHTML;
         const labels = [...svg.matchAll(/data-role="finger"[^>]*data-finger="(\d)"/g)].map(m=>m[1]);
         assert.deepEqual(labels, hint === 'finger' ? [String(target.finger)] : []);
-        assert.equal((svg.match(/data-role="hint"/g) || []).length, hint === 'name' ? 1 : 0);
-        assert.equal(h.document.getElementById('hint-name').hidden, hint !== 'name');
+        assert.equal((svg.match(/data-role="hint"/g) || []).length, hint !== 'off' ? 1 : 0);
+        assert.equal(h.document.getElementById('hint-name').hidden, hint === 'off');
         assert.equal(h.document.getElementById('hint-fingering').hidden, hint !== 'finger');
         assert.equal(h.document.getElementById('hint-panel').hidden, hint === 'off');
         if (hint === 'finger') assert.equal(h.document.getElementById('hint-fingering').textContent, `${target.finger}の指`);
@@ -103,7 +104,7 @@ test('調にないナチュラルも吹き出しが正しく言い当てる', as
   const h = createHarness({phrases:[[note(73,'A',2),note(74,'A',3),note(71,'A',1),note(69,'A',0)]]});
   await startMicPractice(h);
   holdMidi(h,72);
-  assert.equal(h.document.getElementById('companion-words').textContent,'ドの音に聞こえるよ');
+  assert.equal(h.document.getElementById('companion-words').textContent,'高いドに聞こえるよ');
   assert.equal(h.document.getElementById('note-count').textContent,'1 / 4音');
   h.app.destroy();
 });
@@ -136,15 +137,16 @@ test('不正解後も選んだヒントだけを保ち、次の音でも混在�
     const h = createHarness();
     await startMicPractice(h,{hint});
     holdMidi(h,71);
-    assert.equal(h.document.getElementById('hint-name').hidden, hint !== 'name');
+    assert.equal(h.document.getElementById('hint-name').hidden, hint === 'off');
     assert.equal(h.document.getElementById('hint-fingering').hidden, hint !== 'finger');
     assert.equal(h.document.getElementById('hint-panel').hidden, hint === 'off');
-    h.clock.advance(900);
+    await flushAsync();
+    h.clock.advance(1400);
     armWithSilence(h);
     holdMidi(h,69);
     h.clock.advance(300);
     assert.equal(h.document.getElementById('note-count').textContent, '2 / 4音');
-    assert.equal(h.document.getElementById('hint-name').textContent, hint === 'name' ? 'シ' : '');
+    assert.equal(h.document.getElementById('hint-name').textContent, hint !== 'off' ? 'シ' : '');
     assert.equal(h.document.getElementById('hint-fingering').textContent, hint === 'finger' ? '1の指' : '');
     h.app.destroy();
   }
@@ -166,7 +168,10 @@ test('相棒は4音目を含む全正解に反応し、持続音で二重反応�
     armWithSilence(h);
     holdMidi(h, note.midi);
     assert.equal(companion.getAttribute('data-reaction'), 'happy');
+    await flushAsync();
     h.clock.advance(900);
+    assert.equal(companion.getAttribute('data-reaction'), 'happy');
+    h.clock.advance(2200);
     assert.equal(companion.getAttribute('data-reaction'), 'idle');
   }
   h.document.getElementById('quit-button').click();
@@ -181,7 +186,8 @@ test('不正解の吹き出しは無期限に残り、途切れた後の弾き�
   const words = h.document.getElementById('companion-words');
   holdMidi(h, 71);
   assert.equal(companion.getAttribute('data-reaction'), 'miss');
-  assert.equal(words.textContent, 'シの音に聞こえるよ');
+  assert.equal(words.textContent, 'シに聞こえるよ');
+  await flushAsync();
   h.clock.advance(10000);
   holdMidi(h, 71);
   assert.equal(companion.getAttribute('data-reaction'), 'miss');
@@ -204,8 +210,9 @@ test('前の正解演出のタイマーが、次の不正解の吹き出しを�
   armWithSilence(h);
   holdMidi(h, 73);
   assert.equal(h.document.getElementById('companion').getAttribute('data-reaction'), 'miss');
+  await flushAsync();
   h.clock.advance(1500);
-  assert.equal(h.document.getElementById('companion-words').textContent, 'ド♯の音に聞こえるよ');
+  assert.equal(h.document.getElementById('companion-words').textContent, '高いド♯に聞こえるよ');
   h.document.getElementById('skip-button').click();
   assert.equal(h.document.getElementById('companion').getAttribute('data-reaction'), 'idle');
   h.app.destroy();
@@ -353,6 +360,8 @@ class FakeToneContext {
     this.state = 'running';
     this.sampleRate = 48000;
     this.destination = {};
+    this.tones = [];
+    this.gains = [];
   }
 
   get currentTime(){ return this.clock.now() / 1000; }
@@ -360,12 +369,15 @@ class FakeToneContext {
   async close(){ this.state = 'closed'; }
   createOscillator(){
     let stopped = false;
+    const tone = {};
+    this.tones.push(tone);
     return {
       type:'sine',
-      frequency:{setValueAtTime(){}},
+      frequency:{setValueAtTime(value){ tone.frequency = value; }},
       connect(){},
-      start(){},
-      stop(){
+      start(time){ tone.start = time; },
+      stop(time){
+        tone.stop = time;
         if(stopped) throw new Error('oscillator already stopped');
         stopped = true;
       },
@@ -373,8 +385,11 @@ class FakeToneContext {
     };
   }
   createGain(){
+    const events = [];
+    this.gains.push(events);
     return {
-      gain:{setValueAtTime(){}, exponentialRampToValueAtTime(){}},
+      gain:{setValueAtTime(value, time){ events.push({value,time}); },
+        exponentialRampToValueAtTime(value, time){ events.push({value,time}); }},
       connect(){}
     };
   }
@@ -542,7 +557,8 @@ async function passWholeSession(harness, phrases, misses = new Set()){
       const target = phrases[phraseIndex][noteIndex].midi;
       if(misses.has(`${phraseIndex}:${noteIndex}`)){
         holdMidi(harness, target === 71 ? 73 : 71);
-        harness.clock.advance(620);
+        await flushAsync();
+        harness.clock.advance(1400);
         armWithSilence(harness);
       }
       holdMidi(harness, target);
@@ -577,7 +593,7 @@ test('A: レベル1のD5に正確なE5を弾くと不正解になる', async () 
 
   holdMidi(harness, 76);
 
-  assert.match(harness.document.getElementById('practice-status').textContent, /^いまのは ミ の音に聞こえるよ/);
+  assert.match(harness.document.getElementById('practice-status').textContent, /^高いミに聞こえるよ$/);
   assert.equal(harness.document.getElementById('note-count').textContent, '1 / 4音');
 });
 
@@ -712,7 +728,7 @@ test('I: 弦を選ぶレベルでは、押した弦が画面と出題の両方�
   document.getElementById('string-chip-E').click();
   assert.deepEqual(pressedStrings(document), ['G', 'E']);
 
-  await startMicPractice(harness, {level:2});
+  await startMicPractice(harness, {level:2, hint:'name'});
   assert.deepEqual(harness.phraseArgs.at(-1).strings, ['G', 'E']);
 
   const legend = document.getElementById('string-legend');
@@ -842,7 +858,7 @@ test('追加した3調の設定を保存し、不正解をフラット音名で�
   assert.equal(JSON.parse(h.storage.getItem('fuyomi')).settings.key,key);
   assert.match(h.document.getElementById('practice-key').textContent,new RegExp(key));
   holdMidi(h,70);
-  assert.match(h.document.getElementById('companion-words').textContent,/シ♭の音に聞こえるよ/);
+  assert.match(h.document.getElementById('companion-words').textContent,/シ♭に聞こえるよ/);
   assert.doesNotMatch(h.document.getElementById('companion-words').textContent,/ラ♯/);
   h.app.destroy();
  }
@@ -854,4 +870,149 @@ test('フラットの調を先生のURL指定から読み、選択を固定す�
   const select=h.document.getElementById('key-select');
   assert.equal(select.value,key);assert.equal(select.disabled,true);h.app.destroy();
  }
+});
+
+// 表示の境目は、実際のholderとjudgeNoteを通す。判定を直接呼んで回数を増やさない。
+async function retryAfterExample(h) {
+  await flushAsync();
+  h.clock.advance(1400);
+  armWithSilence(h);
+}
+
+function assertAutomaticHints(h, retries) {
+  const doc = h.document;
+  assert.equal(doc.getElementById('hint-name').hidden, retries < 2);
+  assert.equal(doc.getElementById('hint-fingering').hidden, retries < 5);
+  assert.equal(doc.getElementById('string-legend').hidden, retries < 6);
+  const svg = doc.getElementById('staff-wrap').innerHTML;
+  assert.equal((svg.match(/data-role="hint"/g) || []).length, retries >= 2 ? 1 : 0);
+  assert.equal((svg.match(/data-role="finger"/g) || []).length, retries >= 5 ? 1 : 0);
+  assert.match(svg, new RegExp(`data-marks="${retries >= 6 ? 'color' : 'off'}"`));
+  if (retries >= 6) {
+    const heads = [...svg.matchAll(/<path data-role="notehead"[^>]+>/g)].map(m => m[0]);
+    assert.equal(heads.length, 4);
+    assert.match(heads[0], new RegExp(`fill="${stringColor('A','light')}"`));
+    for (const head of heads.slice(1)) assert.doesNotMatch(head, new RegExp(`fill="${stringColor('A','light')}"`));
+  }
+}
+
+test('同じ音名の音程ずれには直す方向だけ返し、別の音には音域と音名を返す', async () => {
+  const cases = [[69.46,'低く'], [68.54,'高く'], [81.46,'低く'], [56.54,'高く'],
+    [55,'低いソに聞こえるよ'], [62,'レに聞こえるよ'], [72,'高いドに聞こえるよ'],
+    [84,'とても高いドに聞こえるよ']];
+  for (const [midi, words] of cases) {
+    const h = createHarness();
+    await startMicPractice(h);
+    holdMidi(h,midi);
+    assert.equal(h.document.getElementById('companion-words').textContent,words);
+    assert.equal(h.document.getElementById('practice-status').textContent,words);
+    assert.equal(h.document.getElementById('note-count').textContent,'1 / 4音');
+    await flushAsync();
+    assert.equal(h.mic.ctx.tones.length,1);
+    assert.equal(h.mic.ctx.tones[0].frequency,442);
+    h.app.destroy();
+  }
+});
+
+test('誤答のお手本は正しい音を1秒大きめに鳴らし、再生音と持続音で二重判定しない', async () => {
+  const h = createHarness();
+  await startMicPractice(h);
+  holdMidi(h,71);
+  await flushAsync();
+  const ctx = h.mic.ctx;
+  assert.equal(ctx.tones.length,1);
+  assert.equal(ctx.tones[0].frequency,442);
+  assert.ok(Math.abs(ctx.tones[0].stop - ctx.tones[0].start - 1.02) < 0.00001);
+  assert.equal(Math.max(...ctx.gains[0].map(event => event.value)),0.34);
+  assert.ok(ctx.gains[0].some(event => Math.abs(event.time - ctx.tones[0].start - 1) < 0.00001 && event.value === 0.0001));
+  for (let i=0;i<8;i++) holdMidi(h,69);
+  assert.equal(h.document.getElementById('note-count').textContent,'1 / 4音');
+  assert.equal(h.document.getElementById('hint-name').hidden,true);
+  assert.equal(ctx.tones.length,1);
+  armWithSilence(h);
+  holdMidi(h,69);
+  h.clock.advance(300);
+  assert.equal(h.document.getElementById('note-count').textContent,'2 / 4音');
+  h.app.destroy();
+});
+
+test('ヒントなしの2・5・6回で現在音だけ段階開示し、次の音と同じ音の再出題では戻す', async () => {
+  for (const marks of ['off','color']) {
+    const h = createHarness();
+    h.document.getElementById('marks-select').value=marks;
+    await startMicPractice(h);
+    assertAutomaticHints(h,0);
+    for (let retries=1; retries<=7; retries++) {
+      holdMidi(h,71);
+      await retryAfterExample(h);
+      assertAutomaticHints(h,retries);
+      assert.equal(h.mic.ctx.tones.length,retries);
+    }
+    h.document.getElementById('skip-button').click();
+    h.clock.advance(300);
+    assertAutomaticHints(h,0);
+    assert.equal(h.document.getElementById('note-count').textContent,'2 / 4音');
+    h.document.getElementById('skip-button').click(); h.clock.advance(300);
+    h.document.getElementById('skip-button').click(); h.clock.advance(300);
+    assertAutomaticHints(h,0);
+    assert.equal(h.document.getElementById('note-count').textContent,'4 / 4音');
+    skipWholeSession(h);
+    const records = h.document.getElementById('record-list').children;
+    assert.ok(JSON.stringify(records[0], (k,v) => k === 'listeners' ? null : v).includes('弦の色'));
+    h.app.destroy();
+  }
+});
+
+test('音名だけと音名と指は7回外しても選択を保つ', async () => {
+  for (const hint of ['name','finger']) {
+    const h=createHarness();
+    h.document.getElementById('marks-select').value='off';
+    await startMicPractice(h,{hint});
+    for (let i=0;i<7;i++) {
+      holdMidi(h,71);
+      await retryAfterExample(h);
+      assert.equal(h.document.getElementById('hint-name').hidden,false);
+      assert.equal(h.document.getElementById('hint-fingering').hidden,hint !== 'finger');
+      assert.equal(h.document.getElementById('string-legend').hidden,true);
+    }
+    h.app.destroy();
+  }
+});
+
+test('吹き出しは早い弾き直し開始で消えず、新しい判定はすぐ反映する', async () => {
+  const h=createHarness();
+  await startMicPractice(h);
+  holdMidi(h,71);
+  await retryAfterExample(h);
+  h.setDetection(voiced(69)); h.clock.frame(20);
+  assert.equal(h.document.getElementById('companion-words').textContent,'シに聞こえるよ');
+  holdMidi(h,69);
+  assert.equal(h.document.getElementById('companion').getAttribute('data-reaction'),'happy');
+  h.app.destroy();
+});
+
+test('お手本の準備中に終了すると遅い音と誤答タイマーが残らない', async () => {
+  const h=createHarness();
+  await startMicPractice(h);
+  const pending=deferred();
+  h.mic.ctx.state='suspended';
+  h.mic.ctx.resume=()=>pending.promise;
+  holdMidi(h,71);
+  h.document.getElementById('quit-button').click();
+  pending.resolve(); await flushAsync(); h.clock.advance(5000);
+  assert.equal(h.mic.ctx.tones.length,0);
+  assert.equal(h.clock.pendingTimers,0);
+  assert.equal(h.document.getElementById('setup-screen').hidden,false);
+  h.app.destroy();
+});
+
+test('お手本を鳴らせない場合も同じ音を再挑戦できる', async () => {
+  const h=createHarness();
+  await startMicPractice(h);
+  h.mic.ctx.createOscillator=()=>{throw new Error('audio unavailable');};
+  holdMidi(h,71);
+  await retryAfterExample(h);
+  holdMidi(h,69); h.clock.advance(300);
+  assert.equal(h.document.getElementById('note-count').textContent,'2 / 4音');
+  h.app.destroy();
 });

@@ -69,7 +69,8 @@ export function judgeNote({freq, targetMidi, candidates, cfg, a4})
 // 生の距離が min(cfg.tol,49) セント以内なら正解。オクターブを畳んだ距離にも同じ幅を適用。
 // 調内の最近傍への救済はしない。半音の違いは全設定で区別する。
 // heard.midi は全半音中の最近傍。候補にない音の stringId / finger は null。
-// アプリの不正解表示は音名だけを使い、観測できない弦・指を付け足さない。
+// アプリの不正解表示は同音名ならcentsの符号から「高く／低く」、別音なら音域つき音名。
+// 観測できない弦・指を付け足さない。
 
 ```
 
@@ -84,7 +85,7 @@ export function judgeNote({freq, targetMidi, candidates, cfg, a4})
 ```js
 export function renderStaff({key, notes, width, theme, marks})
 // notes = [{midi, stringId, finger, state:'done'|'current'|'todo'|'miss', hint:{stringId,finger,nameJa}|null}]
-// note.forceFinger = true // その音だけ番号を残す。appはヒント「指だけ」の現在音に指定。
+// note.forceFinger = true // その音だけ番号を残す。appは「音名と指」または5回誤答後の現在音に指定。
 // marks = 'both'（弦の色＋指番号）| 'color'（弦の色だけ）| 'off'（既定。五線だけ）
 // → SVG文字列。五線・ト音記号（自前パス）・調号・音符・符幹・加線・臨時記号・状態の描き分け。
 // 指番号は data-role="finger"。五線の上端より上に置き、上加線へ出た音だけ自分の加線ぶん持ち上げる。

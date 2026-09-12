@@ -81,6 +81,7 @@ const DEFAULTS = Object.freeze({
 const VALID_COUNTS = new Set([3, 5, 10]);
 const VALID_MARKS = new Set(['both', 'color', 'off']);
 const VALID_HINTS = new Set(['name', 'finger', 'off']);
+const FEEDBACK_DISPLAY_MS = 3000;
 /*
  * 合格したときの言葉。同じ文が続くと飽きるので順に回す。
  * 音程の良し悪しは言わない（採用8）。言っているのは「読めていた」ことだけ。
@@ -776,8 +777,7 @@ function startCurrentRecord() {
     outcome: null,
   };
   state.records.push(record);
-  if (state.config.hint === 'name') record.hints.add('音名');
-  if (state.config.hint === 'finger') record.hints.add('指番号');
+  recordVisibleHints();
   updateHoldProgress(0);
 }
 
@@ -790,10 +790,10 @@ function processPracticeAudio(now, detection, token) {
   const tolerance = TOL[state.config.tolerance];
   const voiced = detection.f > 0 && detection.conf > tolerance.conf;
 
-  // 外した持続音の続きでは消さず、無声を挟んだ次の発音で吹き出しを閉じる。
+  // 弾き直しを急いでも読む時間を残す。新しい判定が確定したら、その結果を優先する。
   if (companionMiss && now >= state.voiceMuteUntil) {
     if (!voiced) companionNeedsSilence = false;
-    else if (!companionNeedsSilence) renderPracticeCompanion();
+    else if (!companionNeedsSilence && now >= companionVisibleUntil) renderPracticeCompanion();
   }
 
   if (state.processing) {
@@ -880,6 +880,15 @@ function switchPracticeToManual() {
 let companionReaction = 0;
 let companionMiss = false;
 let companionNeedsSilence = false;
+let companionVisibleUntil = 0;
+
+function incorrectMessage(result) {
+  const midi = result.heard.midi;
+  // オクターブ救済と同じ音名の扱いに揃え、音名が合うときは直す方向だけ伝える。
+  if ((midi - currentNote().midi) % 12 === 0) return result.cents < 0 ? '高く' : '低く';
+  const register = midi < 60 ? '低い' : midi >= 84 ? 'とても高い' : midi >= 72 ? '高い' : '';
+  return `${register}${noteNameJa(midi)}に聞こえるよ`;
+}
 
 function renderPracticeCompanion(happy = false, mode = 'mic', heardMidi = null) {
   companionMiss = heardMidi !== null;
@@ -887,7 +896,7 @@ function renderPracticeCompanion(happy = false, mode = 'mic', heardMidi = null) 
   // 表情の要素を入れ替えると、前のジャンプの途中でも次の正解に必ず反応できる。
   elements.companionArt.innerHTML = renderCompanion(state.config.level, happy, companionMiss, state.config.companion);
   elements.companion.setAttribute('data-reaction', companionMiss ? 'miss' : happy ? 'happy' : 'idle');
-  elements.companionWords.textContent = companionMiss ? `${noteNameJa(heardMidi)}の音に聞こえるよ` : happy
+  elements.companionWords.textContent = companionMiss ? elements.practiceStatus.textContent : happy
     ? (mode === 'mic' ? 'できたね！' : '一歩ずつ！')
     : 'いっしょに、ひとつずつ。';
 }
@@ -898,7 +907,7 @@ function celebrateCompanion(mode, token) {
   // 次の音の受付は待たせない。古い演出の終了が新しい正解を消さないよう世代を照合する。
   later(() => {
     if (reaction === companionReaction) renderPracticeCompanion();
-  }, 850, token);
+  }, FEEDBACK_DISPLAY_MS, token);
 }
 
 function passCurrentNote(mode, token = state.sessionId) {
@@ -941,6 +950,7 @@ function missCurrentNote(result, token) {
   const record = currentRecord();
   if (!record || token !== state.sessionId) return;
   record.retries += 1;
+  recordVisibleHints();
   state.processing = true;
   state.missFlash = true;
   state.holder.reset();
@@ -952,16 +962,26 @@ function missCurrentNote(result, token) {
   }
   companionReaction += 1;
   companionNeedsSilence = true;
+  companionVisibleUntil = performance.now() + FEEDBACK_DISPLAY_MS;
+  elements.practiceStatus.textContent = incorrectMessage(result);
   renderPracticeCompanion(false, 'mic', heard.midi);
-  elements.practiceStatus.textContent = `いまのは ${noteNameJa(heard.midi)} の音に聞こえるよ。`;
   renderPractice();
 
   later(() => {
-    state.processing = false;
     state.missFlash = false;
-    elements.practiceStatus.textContent = '同じ音を、もう一度そのまま続けます。';
     renderPractice();
   }, 620, token);
+
+  // 正しい音の再生と残響が終わるまで受付を閉じ、自分の音で合格しないようにする。
+  void playSequence([currentNote().midi], {noteDuration: 1, volume: 0.34, muteMargin: 260})
+    .then((duration) => {
+      if (token !== state.sessionId || state.screen !== 'practice') return;
+      if (duration > 0) record.hints.add('おてほん');
+      later(() => {
+        state.processing = false;
+        renderPractice();
+      }, Math.max(620, state.voiceMuteUntil - performance.now()), token);
+    });
 }
 
 function skipCurrentNote() {
@@ -1026,7 +1046,27 @@ async function completePhrase(token) {
   }, Math.max(520, soundDuration + 260), token);
 }
 
+function currentHints() {
+  const retries = currentRecord()?.retries ?? 0;
+  const automatic = state.config.hint === 'off';
+  return {
+    name: automatic ? retries >= 2 : true,
+    finger: automatic ? retries >= 5 : state.config.hint === 'finger',
+    color: automatic ? retries >= 6 : state.config.marks !== 'off',
+  };
+}
+
+function recordVisibleHints() {
+  const record = currentRecord();
+  if (!record) return;
+  const hints = currentHints();
+  if (hints.name) record.hints.add('音名');
+  if (hints.finger) record.hints.add('指番号');
+  if (hints.color && state.config.hint === 'off') record.hints.add('弦の色');
+}
+
 function buildStaffNotes() {
+  const hints = currentHints();
   return state.phrase.notes.map((note, index) => {
     let noteState = 'todo';
     if (index < state.noteIndex) {
@@ -1038,28 +1078,31 @@ function buildStaffNotes() {
     }
 
     const isCurrent = index === state.noteIndex;
-    const hint = isCurrent && state.config.hint === 'name'
+    const hint = isCurrent && hints.name
       ? { nameJa: noteNameJa(note.midi) } : null;
     // 弦と指は staff.js が色と指番号に使う。判定には一切関わらない、勧める運指の表示。
     return {
       midi: note.midi,
-      stringId: note.stringId,
+      // 自動救済の色は現在音だけ。次の答えや終えた音に色を漏らさない。
+      stringId: state.config.hint === 'off' && !isCurrent ? null : note.stringId,
       finger: note.finger,
       state: noteState,
       hint,
       // 色の設定や同音異弦の0/4から、選んでいない種類のヒントが漏れないようにする。
-      forceFinger: isCurrent && state.config.hint === 'finger',
+      forceFinger: isCurrent && hints.finger,
     };
   });
 }
 
 function renderStringLegend() {
-  const show = state.config?.marks !== 'off' && Boolean(state.phrase);
+  const show = Boolean(state.phrase) && currentHints().color;
   elements.stringLegend.hidden = !show;
   if (!show) return;
 
   const theme = currentTheme();
-  const items = levelStrings(state.config.level, state.config.strings).map((id) => {
+  const strings = state.config.hint === 'off' ? [currentNote().stringId]
+    : levelStrings(state.config.level, state.config.strings);
+  const items = strings.map((id) => {
     const item = document.createElement('span');
     item.style.color = stringColor(id, theme);
     item.textContent = `● ${STRING_BY_ID.get(id)?.label || `${id}線`}`;
@@ -1079,7 +1122,7 @@ function renderPractice() {
     notes: staffNotes,
     width: displayWidth,
     theme,
-    marks: state.config.marks,
+    marks: currentHints().color ? 'color' : 'off',
   });
   renderStringLegend();
 
@@ -1091,8 +1134,9 @@ function renderPractice() {
   elements.exampleButton.hidden = false;
 
   const note = currentNote();
-  const showName = Boolean(note) && state.config.hint === 'name';
-  const showFinger = Boolean(note) && state.config.hint === 'finger';
+  const hints = currentHints();
+  const showName = Boolean(note) && hints.name;
+  const showFinger = Boolean(note) && hints.finger;
   elements.hintPanel.hidden = !(showName || showFinger);
   elements.hintName.hidden = !showName;
   elements.hintName.textContent = showName ? noteNameJa(note.midi) : '';
@@ -1269,7 +1313,9 @@ async function playSequence(midis, {
     }
     return duration;
   } catch {
-    elements.practiceStatus.textContent = 'おてほんの音を準備できませんでした。';
+    if (token === state.sessionId && state.screen === 'practice') {
+      elements.practiceStatus.textContent = 'おてほんの音を準備できませんでした。';
+    }
     return 0;
   }
 }
