@@ -104,7 +104,7 @@ test('調にないナチュラルも吹き出しが正しく言い当てる', as
   const h = createHarness({phrases:[[note(73,'A',2),note(74,'A',3),note(71,'A',1),note(69,'A',0)]]});
   await startMicPractice(h);
   holdMidi(h,72);
-  assert.equal(h.document.getElementById('companion-words').textContent,'高いドに聞こえるよ');
+  assert.equal(h.document.getElementById('companion-words').textContent,'ドに聞こえるよ。高くして');
   assert.equal(h.document.getElementById('note-count').textContent,'1 / 4音');
   h.app.destroy();
 });
@@ -186,7 +186,7 @@ test('不正解の吹き出しは無期限に残り、途切れた後の弾き�
   const words = h.document.getElementById('companion-words');
   holdMidi(h, 71);
   assert.equal(companion.getAttribute('data-reaction'), 'miss');
-  assert.equal(words.textContent, 'シに聞こえるよ');
+  assert.equal(words.textContent, 'シに聞こえるよ。低くして');
   await flushAsync();
   h.clock.advance(10000);
   holdMidi(h, 71);
@@ -212,7 +212,7 @@ test('前の正解演出のタイマーが、次の不正解の吹き出しを�
   assert.equal(h.document.getElementById('companion').getAttribute('data-reaction'), 'miss');
   await flushAsync();
   h.clock.advance(1500);
-  assert.equal(h.document.getElementById('companion-words').textContent, '高いド♯に聞こえるよ');
+  assert.equal(h.document.getElementById('companion-words').textContent, 'ド♯に聞こえるよ。低くして');
   h.document.getElementById('skip-button').click();
   assert.equal(h.document.getElementById('companion').getAttribute('data-reaction'), 'idle');
   h.app.destroy();
@@ -593,7 +593,7 @@ test('A: レベル1のD5に正確なE5を弾くと不正解になる', async () 
 
   holdMidi(harness, 76);
 
-  assert.match(harness.document.getElementById('practice-status').textContent, /^高いミに聞こえるよ$/);
+  assert.match(harness.document.getElementById('practice-status').textContent, /^ミに聞こえるよ。低くして$/);
   assert.equal(harness.document.getElementById('note-count').textContent, '1 / 4音');
 });
 
@@ -896,10 +896,10 @@ function assertAutomaticHints(h, retries) {
   }
 }
 
-test('同じ音名の音程ずれには直す方向だけ返し、別の音には音域と音名を返す', async () => {
+test('同じ音名の音程ずれには直す方向だけ返し、別の音には音名と直す方向を返す', async () => {
   const cases = [[69.46,'低く'], [68.54,'高く'], [81.46,'低く'], [56.54,'高く'],
-    [55,'低いソに聞こえるよ'], [62,'レに聞こえるよ'], [72,'高いドに聞こえるよ'],
-    [84,'とても高いドに聞こえるよ']];
+    [55,'ソに聞こえるよ。高くして'], [62,'レに聞こえるよ。高くして'], [72,'ドに聞こえるよ。低くして'],
+    [84,'ドに聞こえるよ。低くして']];
   for (const [midi, words] of cases) {
     const h = createHarness();
     await startMicPractice(h);
@@ -985,7 +985,7 @@ test('吹き出しは早い弾き直し開始で消えず、新しい判定は�
   holdMidi(h,71);
   await retryAfterExample(h);
   h.setDetection(voiced(69)); h.clock.frame(20);
-  assert.equal(h.document.getElementById('companion-words').textContent,'シに聞こえるよ');
+  assert.equal(h.document.getElementById('companion-words').textContent,'シに聞こえるよ。低くして');
   holdMidi(h,69);
   assert.equal(h.document.getElementById('companion').getAttribute('data-reaction'),'happy');
   h.app.destroy();

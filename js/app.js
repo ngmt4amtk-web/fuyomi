@@ -886,8 +886,9 @@ function incorrectMessage(result) {
   const midi = result.heard.midi;
   // オクターブ救済と同じ音名の扱いに揃え、音名が合うときは直す方向だけ伝える。
   if ((midi - currentNote().midi) % 12 === 0) return result.cents < 0 ? '高く' : '低く';
-  const register = midi < 60 ? '低い' : midi >= 84 ? 'とても高い' : midi >= 72 ? '高い' : '';
-  return `${register}${noteNameJa(midi)}に聞こえるよ`;
+  // 音域の呼び名ではなく、聞こえた音から出題音へ動かす方向を添える。
+  const direction = midi > currentNote().midi ? '低くして' : '高くして';
+  return `${noteNameJa(midi)}に聞こえるよ。${direction}`;
 }
 
 function renderPracticeCompanion(happy = false, mode = 'mic', heardMidi = null) {
